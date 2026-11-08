@@ -230,7 +230,12 @@ export function iniciarApp(rootEl, ctx) {
       (S.slow ? '<p class="note">A base ainda não respondeu. Verifique a conexão; a página continua tentando sozinha.</p>' : '') +
       '<div class="skel" style="width:40%"></div><div class="skel"></div><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div></div>';
   }
-  function top(t, sub, ctl) { return '<div class="top"><div class="ttl"><h1>' + t + '</h1>' + (sub ? '<small>' + sub + '</small>' : '') + '</div><div class="ctl">' + (ctl || '') + '</div></div>'; }
+  function top(t, sub, ctl) { return '<div class="top"><div class="ttl"><h1>' + t + '</h1>' + (sub ? '<small>' + sub + '</small>' : '') + '</div><div class="ctl">' + (ctl || '') + usuarioTopo() + '</div></div>'; }
+  function usuarioTopo() {
+    var nome = ctx.perfil.nome || ctx.perfil.email || '', ini = nome.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function (x) { return x[0].toUpperCase(); }).join('');
+    return '<div class="usr" title="' + esc(ctx.perfil.email) + '"><span class="avatar" aria-hidden="true">' + esc(ini) + '</span><span class="usr-nome">' + esc(nome) + '</span>' +
+      '<button class="btn sm" data-act="sair" aria-label="Sair da plataforma"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>Sair</button></div>';
+  }
   function dis() { return S.canWrite ? '' : ' disabled'; }
   function sel(id, opts, val, attrs) {
     return '<select class="inp" id="' + id + '" ' + (attrs || '') + '>' + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
