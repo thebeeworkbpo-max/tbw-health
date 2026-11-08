@@ -6,13 +6,13 @@ const root = document.getElementById('root');
 const CHAVE_CLINICA = 'tbw.clinica';
 let supa = null;
 
-const LOGO = '<svg width="44" height="44" viewBox="0 0 40 40" aria-hidden="true"><g fill="none" stroke-width="2.4"><path d="M13 6l7 4v8l-7 4-7-4v-8z" stroke="#00ACFF"/><path d="M27 14l7 4v8l-7 4-7-4v-8z" stroke="#fff"/><path d="M13 22l7 4v8l-7 4-7-4v-8z" stroke="#00ACFF" opacity=".7"/></g></svg>';
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function tela(titulo, corpo) {
-  root.innerHTML = '<div class="auth"><div class="auth-side"><div class="brand">' + LOGO + '<div><b>TBW <span>HEALTH</span></b><small>Gestão financeira para clínicas</small></div></div>' +
-    '<p class="auth-claim">Precificação, CMV e CSV, planejamento orçamentário, DRE e fluxo de caixa da clínica em um só lugar.</p><p class="auth-foot">TBW BPO Financeiro · thebeework.com.br</p></div>' +
-    '<main class="auth-main"><div class="auth-card"><h1>' + titulo + '</h1>' + corpo + '</div></main></div>';
+  root.innerHTML = '<div class="auth"><header class="auth-hero" role="img" aria-label="TBW Health"></header>' +
+    '<main class="auth-body"><div class="auth-card"><h1>' + titulo + '</h1>' + corpo + '</div>' +
+    '<p class="auth-claim">Precificação, CMV e CSV, planejamento orçamentário, DRE e fluxo de caixa da clínica em um só lugar.</p>' +
+    '<p class="auth-foot">TBW BPO Financeiro · thebeework.com.br</p></main></div>';
 }
 function aviso(el, msg, ok) { const n = document.getElementById(el); if (n) { n.textContent = msg || ''; n.className = 'auth-msg' + (ok ? ' ok' : ''); } }
 
@@ -21,7 +21,7 @@ function carregando(msg) { tela('Carregando…', '<p class="note">' + esc(msg ||
 async function telaLogin() {
   let primeiro = false;
   try { const { data } = await supa.rpc('precisa_primeiro_admin'); primeiro = data === true; } catch (e) { /* segue */ }
-  tela('Entrar',
+  tela('Entrar na plataforma',
     '<form id="f-login" class="stack" novalidate><label class="f">E-mail<input class="inp" id="l-email" type="email" autocomplete="username" required></label>' +
     '<label class="f">Senha<input class="inp" id="l-senha" type="password" autocomplete="current-password" required></label>' +
     '<button class="btn pri" type="submit" id="l-ok">Entrar</button><p id="l-msg" class="auth-msg" role="alert"></p></form>' +
