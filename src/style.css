@@ -57,8 +57,8 @@ h3 { font-size: 14px; font-weight: 600; }
 .side { background: linear-gradient(180deg, var(--navy) 0%, var(--navy-3) 100%); color: #DCE8F7; display: flex; flex-direction: column; gap: 20px; padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
 .brand { display: grid; gap: 6px; padding: 2px 6px 0; }
 .brand-mark { display: flex; align-items: center; gap: 9px; }
-.brand-mark img { height: 30px; width: auto; display: block; }
-.health { font-family: 'Montserrat', sans-serif; font-weight: 300; letter-spacing: 0.16em; color: var(--health); font-size: 17px; line-height: 1; }
+.brand-mark img { height: 36px; width: auto; display: block; }
+.health { font-family: 'Montserrat', sans-serif; font-weight: 400; letter-spacing: 0.05em; color: var(--health); font-size: 14px; line-height: 1; }
 .brand small { display: block; font-size: 11px; color: #8FB0D6; letter-spacing: 0.04em; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: #C5D6EC; text-decoration: none; font-weight: 500; }
@@ -273,9 +273,15 @@ svg.chart .lbl-strong { fill: var(--ink); font-weight: 600; }
 .modal .inp { width: 100%; font-variant-numeric: tabular-nums; }
 
 .auth { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); }
-.auth-hero { height: clamp(170px, 27vw, 330px); background: var(--navy) url('/marca/banner-tbw-health.jpg') left center / cover no-repeat; border-top: 6px solid #005984; flex: none; }
+.auth-hero { height: clamp(230px, 24vw, 340px); flex: none; display: grid; place-items: center; padding: 0 20px 40px; border-top: 6px solid #005984;
+  background-color: var(--navy);
+  background-image: url('https://static.wixstatic.com/media/b8e48d_0950b47675714267af109d335ee3b6bd~mv2.jpg/v1/fill/w_2240,h_640,al_c,q_85,enc_auto/hero-tbw-health.jpg'), linear-gradient(120deg, #1A3957 0%, #0D2338 100%);
+  background-size: cover; background-position: center; }
+.auth-logo { display: flex; align-items: center; gap: clamp(14px, 2vw, 28px); }
+.auth-logo img { height: clamp(64px, 8vw, 112px); width: auto; display: block; }
+.auth-logo .health { font-size: clamp(20px, 2.6vw, 36px); letter-spacing: 0.05em; }
 .auth-body { flex: 1; display: grid; justify-items: center; align-content: start; gap: 18px; padding: 0 16px 40px; }
-.auth-card { width: min(420px, 100%); margin-top: -64px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; display: grid; gap: 14px; box-shadow: 0 18px 50px rgba(13, 35, 56, 0.18); position: relative; }
+.auth-card { width: min(420px, 100%); margin-top: -48px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; display: grid; gap: 14px; box-shadow: 0 18px 50px rgba(13, 35, 56, 0.18); position: relative; }
 .auth-card h1 { font-size: 21px; }
 .auth-card .inp { width: 100%; }
 .auth-card hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
@@ -286,4 +292,4 @@ svg.chart .lbl-strong { fill: var(--ink); font-weight: 600; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 900px) { .side-clin { min-width: 180px; } .side-foot { display: none; } }
 .auth-card .btn.pri { justify-content: center; padding: 10px 14px; }
-@media (max-width: 600px) { .auth-hero { height: 150px; } .auth-card { margin-top: -14px; padding: 22px; } }
+@media (max-width: 600px) { .auth-hero { height: 190px; padding-bottom: 30px; } .auth-card { margin-top: -26px; padding: 22px; } }

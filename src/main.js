@@ -9,7 +9,7 @@ let supa = null;
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function tela(titulo, corpo) {
-  root.innerHTML = '<div class="auth"><header class="auth-hero" role="img" aria-label="TBW Health"></header>' +
+  root.innerHTML = '<div class="auth"><header class="auth-hero"><div class="auth-logo"><img src="/marca/logo-tbw-branco.png" alt="TBW" width="302" height="109"><span class="health">HEALTH</span></div></header>' +
     '<main class="auth-body"><div class="auth-card"><h1>' + titulo + '</h1>' + corpo + '</div>' +
     '<p class="auth-claim">Precificação, CMV e CSV, planejamento orçamentário, DRE e fluxo de caixa da clínica em um só lugar.</p>' +
     '<p class="auth-foot">TBW BPO Financeiro · thebeework.com.br</p></main></div>';

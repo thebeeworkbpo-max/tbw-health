@@ -216,7 +216,7 @@ export function iniciarApp(rootEl, ctx) {
     else if (!ctx.clinica) body = top('Nenhuma clínica cadastrada', '') + '<div class="view"><div class="card empty"><h2>Cadastre a primeira clínica</h2><p class="note">Na Administração, crie a clínica e depois importe a planilha de precificação dela.</p><a class="btn pri" href="#admin">Abrir administração</a></div></div>';
     else if (!S.procs && v !== 'premissas') body = onboarding();
     else body = viewHtml(v);
-    return '<div class="app"><aside class="side"><div class="brand"><div class="brand-mark"><img src="/marca/logo-tbw-branco.png" alt="TBW" width="83" height="30"><span class="health">HEALTH</span></div><small>Gestão financeira da clínica</small></div>' + sideClinica() + '<nav class="nav" aria-label="Seções">' + nav + '</nav>' +
+    return '<div class="app"><aside class="side"><div class="brand"><div class="brand-mark"><img src="/marca/logo-tbw-branco.png" alt="TBW" width="99" height="36"><span class="health">HEALTH</span></div><small>Gestão financeira da clínica</small></div>' + sideClinica() + '<nav class="nav" aria-label="Seções">' + nav + '</nav>' +
       '<div class="side-foot"><div id="sync"></div><div class="who"><b>' + esc(ctx.perfil.nome || ctx.perfil.email) + '</b><span>' + esc(ctx.perfil.email) + ' · ' + esc(PAPEL[ctx.papel] || ctx.papel) + '</span></div><div class="row" style="gap:6px"><button class="btn sm side-btn" data-act="senha">Alterar senha</button><button class="btn sm side-btn" data-act="sair">Sair</button></div></div></aside><main class="main">' + body + '</main></div>' + overlays();
   }
   var PAPEL = { admin: 'Administrador TBW', editor: 'Edição', leitura: 'Consulta' };
