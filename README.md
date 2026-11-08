@@ -49,6 +49,9 @@ DRE e fluxo de caixa (DFC) orçado × realizado, e importação do realizado a p
 npm install
 cp .env.example .env.local   # preencha URL e chave anon
 npm run dev
+
+# conferir o motor contra uma planilha (instala o leitor de Excel só nesta máquina, sem alterar o projeto)
+npm install --no-save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 npm test -- "caminho/da/planilha.xlsx"
 ```
 

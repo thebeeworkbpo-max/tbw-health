@@ -1,7 +1,8 @@
 // Confere o motor de cálculo contra os valores calculados pela própria planilha.
-// Uso: node scripts/testar-motor.mjs "caminho/da/planilha.xlsx"
+// Uso: npm test -- "caminho/da/planilha.xlsx"
+// O leitor de Excel (SheetJS) não fica nas dependências do projeto; para conferir uma planilha, instale uma vez:
+//   npm install --no-save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 import fs from 'node:fs';
-import XLSX from 'xlsx';
 import TBW from '../src/engine.js';
 import { lerPlanilha } from '../src/planilha.js';
 
@@ -19,6 +20,13 @@ confere('parse valor', TBW.parseValor('R$ 1.234,56'), 1234.56);
 
 // 2) Planilha real, se informada
 if (arq) {
+  let XLSX;
+  try { const m = await import('xlsx'); XLSX = m.default || m; }
+  catch (e) {
+    console.log('Falta o leitor de Excel. Rode uma vez:\n  npm install --no-save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz');
+    process.exit(1);
+  }
+  if (!fs.existsSync(arq)) { console.log('Planilha não encontrada: ' + arq); process.exit(1); }
   const bytes = fs.readFileSync(arq);
   const base = lerPlanilha(XLSX, bytes, arq, null);
   const wb = XLSX.read(bytes, { type: 'buffer' });
