@@ -32,8 +32,9 @@ DRE e fluxo de caixa (DFC) orçado × realizado, e importação do realizado a p
 
 ## Instalação
 
-1. Vercel → Storage → Create Database → Supabase (região São Paulo) e conecte ao projeto da Vercel.
-   A integração cria `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` etc.
+1. Banco: projeto Supabase **tbw-health-db** (`acncpweqfqfeyezmjscg`, São Paulo). Conecte-o ao projeto da Vercel
+   (Storage → Connect Project) ou cadastre na Vercel as variáveis `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`.
+   A URL e a chave anon também estão em `src/supa.js` como padrão; a chave de serviço só fica na Vercel.
 2. Aplique `supabase/migrations/*.sql` no banco e cadastre o e-mail do primeiro administrador:
    `insert into public.admins_iniciais (email) values ('seu@email.com');`
 3. Importe este repositório na Vercel (framework Vite, já configurado em `vercel.json`).

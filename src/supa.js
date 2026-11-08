@@ -3,13 +3,21 @@
    como um documento JSON na tabela public.documentos, isolado por clinica_id via RLS. */
 import { createClient } from '@supabase/supabase-js';
 
+// Projeto Supabase tbw-health-db (São Paulo). URL e chave anon são públicas por natureza: a proteção dos dados é o RLS.
+const PADRAO = {
+  url: 'https://acncpweqfqfeyezmjscg.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjbmNwd2VxZnFmZXllem1qc2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQxNTc2MzQsImV4cCI6MjEwOTczMzYzNH0.7bLjTd7ynBIFDO60ffqRVOXNKbFXfkAZU6TN9B2ucs4'
+};
+
 export async function conectar() {
   let url = import.meta.env.VITE_SUPABASE_URL, key = import.meta.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    const r = await fetch('/api/config', { cache: 'no-store' });
-    if (!r.ok) throw new Error('A configuração do Supabase não foi encontrada (/api/config respondeu ' + r.status + ').');
-    const j = await r.json(); url = j.url; key = j.key;
+    try {
+      const r = await fetch('/api/config', { cache: 'no-store' });
+      if (r.ok) { const j = await r.json(); url = j.url; key = j.key; }
+    } catch (e) { /* usa o padrão */ }
   }
+  if (!url || !key) { url = PADRAO.url; key = PADRAO.key; }
   return createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
 }
 
