@@ -301,3 +301,15 @@ svg.chart .lbl-strong { fill: var(--ink); font-weight: 600; }
 .side { overflow-y: auto; }
 @media (max-width: 1100px) { .usr-nome { display: none; } }
 @media (max-width: 900px) { .usr { border-left: 0; padding-left: 0; margin-left: 0; } }
+
+/* Conexões e conciliação */
+.fonte { display: grid; gap: 12px; align-content: start; }
+.fonte > header { margin-bottom: 0; }
+.fonte .f { min-width: 0; }
+.eyebrow { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--blue); margin-bottom: 8px; }
+.drop.sm { padding: 14px; gap: 4px; cursor: pointer; }
+.drop.sm .note { font-size: 12px; }
+.contas { display: grid; gap: 6px; }
+.conta { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft-2); font-size: 13px; }
+@media (max-width: 1100px) { .grid.g3:has(.fonte) { grid-template-columns: 1fr; } }
+.steps { scroll-margin-top: 96px; }

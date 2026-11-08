@@ -1,5 +1,6 @@
 import TBW from './engine.js';
 import { lerPlanilha } from './planilha.js';
+import * as CX from './conexoes.js';
 
 export function iniciarApp(rootEl, ctx) {
   'use strict';
@@ -36,17 +37,18 @@ export function iniciarApp(rootEl, ctx) {
   /* ================= Estado ================= */
   var S = {
     db: null, user: null, dl: null, uid: null, canWrite: true, ready: false, noDb: false, slow: false,
-    cfg: null, insumos: null, procs: null, orcs: {}, real: {}, depara: {}, erpcfg: {},
+    cfg: null, insumos: null, procs: null, orcs: {}, real: {}, depara: {}, erpcfg: {}, banco: {}, cartao: {}, ofin: null,
     got: {}, ver: 0, saving: 0, lastSave: null,
     ui: {
       view: 'visao', ano: null, mes: null, per: 'ytd',
       prec: { q: '', g: '', st: '', forma: 'pix', sort: 'o', dir: 1 },
       ins: { q: '', cat: '' }, sel: null, meta: null,
       dreView: 'cmp', dreBase: 'real', dfcView: 'cmp', dfcBase: 'real', open: {},
-      imp: null, orcCresc: 5, modal: null, toast: null, pend: false
+      imp: null, impB: null, impC: null, conc: { mes: null, q: '', conta: '' }, of: { cfg: null, busy: false }, orcCresc: 5, modal: null, toast: null, pend: false
     }
   };
-  var REQ = ['config/geral', 'base/insumos', 'base/procedimentos', 'orcamento', 'realizado', 'erp/depara', 'erp/config'];
+  var REQ = ['config/geral', 'base/insumos', 'base/procedimentos', 'orcamento', 'realizado', 'erp/depara', 'erp/config', 'banco', 'cartao', 'conexoes/openfinance'];
+  var COLS = { orcamento: 'orcs', realizado: 'real', banco: 'banco', cartao: 'cartao' };
 
   function cfg() { var c = S.cfg || {}; return { t: c.t != null ? +c.t : 0.14, c: c.c != null ? +c.c : 0.06, modo: c.modo || 'planilha', meta: c.meta != null ? +c.meta : 0.35, clinica: c.clinica || (ctx.clinica ? ctx.clinica.nome : 'TBW Health'), ano: c.ano, origem: c.origem }; }
   var memo = {};
@@ -148,6 +150,9 @@ export function iniciarApp(rootEl, ctx) {
     subDoc('erp/config', function (d) { S.erpcfg = d || {}; });
     subCol('orcamento', function (docs) { S.orcs = docs; });
     subCol('realizado', function (docs) { S.real = docs; });
+    subCol('banco', function (docs) { S.banco = docs; });
+    subCol('cartao', function (docs) { S.cartao = docs; });
+    subDoc('conexoes/openfinance', function (d) { S.ofin = d; });
   }
   function subDoc(path, apply) {
     S.db.doc(path).onSnapshot(function (snap) {
@@ -161,7 +166,7 @@ export function iniciarApp(rootEl, ctx) {
       var o = {}; snap.docs.forEach(function (d) { if (d.exists) o[d.id] = clone(d.data()); });
       var pendLocal = Object.keys(W.timers).some(function (k) { return k.indexOf(path + '/') === 0; });
       if (!pendLocal || !S.got[path]) apply(o);
-      else { Object.keys(o).forEach(function (k) { if (!W.timers[path + '/' + k]) (path === 'orcamento' ? S.orcs : S.real)[k] = o[k]; }); }
+      else { Object.keys(o).forEach(function (k) { if (!W.timers[path + '/' + k]) S[COLS[path]][k] = o[k]; }); }
       S.got[path] = true; touch(); ready(); later();
     }, function (e) { S.got[path] = true; ready(); later(); console.warn(path, e); });
   }
@@ -181,7 +186,8 @@ export function iniciarApp(rootEl, ctx) {
     { id: 'orcamento', n: 'Planejamento', ic: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
     { id: 'precificacao', n: 'Precificação', sec: 'Custos', ic: '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/>' },
     { id: 'insumos', n: 'Insumos CMV · CSV', ic: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>' },
-    { id: 'erp', n: 'Integração ERP', sec: 'Dados', ic: '<path d="M8 7V3M16 7V3M6 7h12v4a6 6 0 0 1-12 0V7zM12 17v4"/>' },
+    { id: 'erp', n: 'Conexões', sec: 'Dados', ic: '<path d="M8 7V3M16 7V3M6 7h12v4a6 6 0 0 1-12 0V7zM12 17v4"/>' },
+    { id: 'conc', n: 'Conciliação', ic: '<path d="M4 7h11M4 7l3-3M4 7l3 3M20 17H9M20 17l-3-3M20 17l-3 3"/>' },
     { id: 'premissas', n: 'Premissas', ic: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>' },
     { id: 'admin', n: 'Administração', sec: 'TBW', ic: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>' }
   ];
@@ -262,6 +268,7 @@ export function iniciarApp(rootEl, ctx) {
       case 'dre': return vDem('dre');
       case 'dfc': return vDem('dfc');
       case 'erp': return vErp();
+      case 'conc': return vConc();
       case 'premissas': return vPrem();
       default: return vVisao();
     }
@@ -684,23 +691,60 @@ export function iniciarApp(rootEl, ctx) {
     ['tipo', 'Tipo (receita / despesa)', /^tipo|natureza|operac|entrada.*saida|receita.*despesa/],
     ['sit', 'Situação', /situac|status/]
   ];
+  var SIST = {
+    erp: ['A definir', 'Support Clinic', 'Conta Azul', 'Omie', 'Klingo', 'Bling', 'Outro'],
+    banco: ['A definir', 'Sicoob', 'Sicredi', 'Itaú', 'Bradesco', 'Banco do Brasil', 'Caixa', 'Santander', 'Inter', 'Outro'],
+    cartao: ['A definir', 'InfinitePay', 'Stone', 'Cielo', 'Rede', 'PagBank', 'Getnet', 'Mercado Pago', 'SumUp', 'Outro']
+  };
+  var COMO = {
+    erp: 'Exporte do financeiro do ERP o relatório de contas pagas e recebidas (Excel ou CSV) com competência, pagamento, categoria e valor.',
+    banco: 'Exporte o extrato da conta em OFX (preferível) ou Excel. Só os dias cobertos pelo arquivo são substituídos.',
+    cartao: 'Exporte o relatório de vendas do mês completo (CSV ou Excel) com valor bruto, taxa, líquido e forma de pagamento.'
+  };
+  function opts(l) { return l.map(function (x) { return [x, x]; }); }
+  function fmtDia(d) { return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''; }
+  function barra(fn) { var a = ano(); return '<div class="mesbar">' + range(0, 11).map(function (m) { var r = fn(ym(a, m)); return '<span class="' + (r ? r[0] : '') + '" title="' + esc(r ? r[1] : 'Sem dados') + '">' + mesNome(m) + '</span>'; }).join('') + '</div>'; }
+  function ultImport(col) {
+    var o = col === 'banco' ? S.banco : col === 'cartao' ? S.cartao : S.real, best = null;
+    Object.keys(o).forEach(function (k) {
+      var d = o[k], cand = col === 'banco' ? Object.keys(d.contas || {}).map(function (c) { return d.contas[c]; }) : [d];
+      cand.forEach(function (x) { if (x && x.importadoEm && (col !== 'realizado' || x.fonte === 'erp') && (!best || x.importadoEm > best.importadoEm)) best = x; });
+    });
+    return best;
+  }
+  function quando(x) { return x ? esc(x.fonte === 'openfinance' ? 'Open Finance' : (x.arquivo || '')) + ' · ' + new Date(x.importadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nenhuma ainda'; }
+  function contasBanco() { // última foto de cada conta
+    var o = {};
+    Object.keys(S.banco).sort().forEach(function (k) {
+      var cs = S.banco[k].contas || {};
+      Object.keys(cs).forEach(function (c) { var x = cs[c]; o[c] = o[c] || {}; o[c].nome = x.nome; o[c].conta = x.conta; o[c].fonte = x.fonte; if (x.saldo) o[c].saldo = x.saldo; });
+    });
+    return o;
+  }
+  function fonteCard(tipo, rot, campo, bar, ult, extra, fileId, accept) {
+    return '<div class="card fonte"><header><div><span class="eyebrow">' + rot + '</span>' + campo + '</div></header>' + bar +
+      '<p class="note">Última importação: ' + quando(ult) + '</p>' + (extra || '') +
+      (S.canWrite ? '<label class="drop sm" data-drop="' + tipo + '" for="' + fileId + '"><b>Importar arquivo</b><span class="note">' + COMO[tipo] + '</span></label><input type="file" id="' + fileId + '" accept="' + accept + '" hidden data-in="' + fileId + '">' : '<p class="note">' + COMO[tipo] + '</p>') + '</div>';
+  }
   function vErp() {
-    var a = ano(), I = S.ui.imp;
-    var mb = range(0, 11).map(function (m) { var d = realDoc(a, m); return '<span class="' + (d ? (d.fonte === 'exemplo' ? 'ex' : 'erp') : '') + '" title="' + (d ? esc((d.fonte === 'exemplo' ? 'Exemplo' : 'ERP') + ' · ' + (d.arquivo || '') + ' · ' + (d.linhas || 0) + ' lançamentos') : 'Sem realizado') + '">' + mesNome(m) + '</span>'; }).join('');
-    var ult = Object.keys(S.real).map(function (k) { return S.real[k]; }).filter(function (d) { return d.fonte === 'erp'; }).sort(function (x, y) { return (y.importadoEm || '').localeCompare(x.importadoEm || ''); })[0];
-    var erps = [['A definir', 'A definir'], ['Conta Azul', 'Conta Azul'], ['Omie', 'Omie'], ['Klingo', 'Klingo'], ['Bling', 'Bling'], ['Outro', 'Outro']];
-    var html = top('Integração com o ERP', 'Realizado da DRE e do fluxo de caixa a partir da exportação financeira do ERP da clínica', anoCtl()) + '<div class="view">' + roBanner() +
-      '<div class="grid g2"><div class="card"><header><div><h2>Situação do realizado · ' + a + '</h2><p>Verde: importado do ERP · amarelo: exemplo · cinza: sem dados</p></div></header><div class="mesbar">' + mb + '</div>' +
-      '<div class="row" style="margin-top:12px"><label class="f">ERP da clínica' + sel('erp-nome', erps, S.erpcfg.erp || 'A definir', 'data-in="erpnome"' + dis()) + '</label><p class="note" style="flex:1">' + (ult ? 'Última importação: ' + esc(ult.arquivo || '') + ' em ' + new Date(ult.importadoEm).toLocaleString('pt-BR') : 'Nenhuma importação do ERP ainda.') + '</p></div>' +
-      (temExemplo() && Object.keys(S.real).some(function (k) { return S.real[k].fonte === 'exemplo'; }) ? '<div class="row" style="margin-top:10px"><button class="btn danger" data-act="erp-limpa"' + dis() + '>Remover realizado de exemplo</button></div>' : '') + '</div>' +
-      '<div class="card"><header><h2>Como funciona a conexão</h2></header><div class="stack note" style="color:var(--ink)">' +
-      '<p class="note">1. No ERP, exporte o relatório de lançamentos financeiros (contas pagas e recebidas) em Excel ou CSV, com data, categoria e valor. Exporte o período completo dos meses que quer atualizar.</p>' +
-      '<p class="note">2. Envie o arquivo aqui. A plataforma reconhece as colunas e agrupa as categorias do plano de contas.</p>' +
-      '<p class="note">3. Indique uma vez a linha da DRE de cada categoria. O de-para fica salvo e as próximas importações saem prontas.</p>' +
-      '<p class="note">A DRE usa a data de competência; o fluxo de caixa usa a data de pagamento e ignora o que está em aberto. A página não acessa a API do ERP diretamente: a carga é feita pelo arquivo exportado.</p></div></div></div>';
+    var I = S.ui.imp, E = S.erpcfg || {};
+    var barE = barra(function (k) { var d = S.real[k]; return d ? [d.fonte === 'exemplo' ? 'ex' : 'erp', (d.fonte === 'exemplo' ? 'Exemplo' : 'ERP') + ' · ' + (d.arquivo || '') + ' · ' + (d.linhas || 0) + ' lançamentos'] : null; });
+    var barB = barra(function (k) { var d = S.banco[k], cs = d && d.contas ? Object.keys(d.contas) : []; return cs.length ? ['erp', cs.map(function (c) { return d.contas[c].nome + ': ' + d.contas[c].n + ' lançamentos'; }).join(' · ')] : null; });
+    var barC = barra(function (k) { var d = S.cartao[k]; return d ? ['erp', d.n + ' vendas · ' + R0(d.bruto)] : null; });
+    var cts = contasBanco(), ctsHtml = Object.keys(cts).map(function (c) {
+      var x = cts[c];
+      return '<div class="spread conta"><span>' + esc(x.nome) + (x.conta ? ' · ' + esc(x.conta) : '') + (x.fonte === 'openfinance' ? ' <span class="chip info">Open Finance</span>' : '') + '</span>' + (x.saldo ? '<b>' + R2(x.saldo.valor) + ' <small class="muted">em ' + fmtDia(x.saldo.data) + '</small></b>' : '') + '</div>';
+    }).join('');
+    var limpa = temExemplo() && Object.keys(S.real).some(function (k) { return S.real[k].fonte === 'exemplo'; }) ? '<button class="btn sm danger" data-act="erp-limpa"' + dis() + '>Remover realizado de exemplo</button>' : '';
+    var html = top('Conexões da clínica', 'ERP, banco e maquininha alimentam o realizado, o fluxo de caixa e a conciliação', anoCtl()) + '<div class="view">' + roBanner() +
+      '<div class="grid g3">' +
+      fonteCard('erp', 'ERP · gestão da clínica', '<label class="f">Sistema' + sel('erp-nome', opts(SIST.erp), E.erp || 'A definir', 'data-in="erpnome"' + dis()) + '</label>', barE, ultImport('realizado'), limpa, 'erp-file', '.xlsx,.xls,.csv,.txt') +
+      fonteCard('banco', 'Banco · extrato', '<label class="f">Banco' + sel('banco-nome', opts(SIST.banco), E.banco || 'A definir', 'data-in="bconome"' + dis()) + '</label>', barB, ultImport('banco'), ctsHtml ? '<div class="contas">' + ctsHtml + '</div>' : '', 'banco-file', '.ofx,.xlsx,.xls,.csv,.txt') +
+      fonteCard('cartao', 'Maquininha · vendas', '<label class="f">Maquininha' + sel('cartao-nome', opts(SIST.cartao), E.cartao || 'A definir', 'data-in="cartnome"' + dis()) + '</label>', barC, ultImport('cartao'), '', 'cartao-file', '.xlsx,.xls,.csv,.txt') +
+      '</div>' + (S.ui.impB ? bancoSteps() : '') + (S.ui.impC ? cartaoSteps() : '');
     if (!I) {
-      html += '<div class="card"><header><h2>Importar lançamentos do ERP</h2></header><label class="drop" id="drop" for="erp-file"><b>Arraste o arquivo aqui ou clique para escolher</b><span class="note">Excel (.xlsx, .xls) ou CSV · exportação de contas pagas e recebidas</span></label><input type="file" id="erp-file" accept=".xlsx,.xls,.csv,.txt" hidden data-in="erp-file"' + dis() + '></div>';
-      html += deparaCard();
+      html += ofCard() + deparaCard();
+      html += '<p class="note">O ERP gera a DRE (competência) e o fluxo de caixa (pagamento). O extrato do banco e o relatório da maquininha não alteram esses números: eles conferem o caixa e as taxas na tela Conciliação.</p>';
       return html + '</div>';
     }
     // passo 2: colunas
@@ -727,7 +771,7 @@ export function iniciarApp(rootEl, ctx) {
       '<div class="step-h"><span class="no">4</span><h3>Meses a importar</h3><span class="note">Cada mês marcado substitui o realizado já gravado</span></div>' +
       '<div class="tw"><table class="t"><thead><tr><th></th><th>Mês</th><th class="n">Lançamentos</th><th class="n">Receita bruta</th><th class="n">EBITDA</th><th class="n">Variação de caixa</th><th></th></tr></thead><tbody>' + (mesRows || '<tr><td colspan="7" class="muted">Nenhum mês reconhecido. Confira as colunas de data.</td></tr>') + '</tbody></table></div>' +
       '<div class="row"><button class="btn pri" data-act="imp-go"' + (nSel && S.canWrite ? '' : ' disabled') + '>Importar ' + nSel + ' ' + (nSel === 1 ? 'mês' : 'meses') + '</button><span class="note">O de-para usado nesta importação fica salvo para as próximas.</span></div></div>';
-    return html + '</div>';
+    return html + ofCard() + '</div>';
   }
   function deparaCard() {
     var ks = Object.keys(S.depara || {}).sort(function (x, y) { return x.localeCompare(y, 'pt-BR'); });
@@ -824,7 +868,7 @@ export function iniciarApp(rootEl, ctx) {
     lerArquivo(file).then(function (sheets) {
       var best = 0; sheets.forEach(function (s, i) { if (s.aoa.length > sheets[best].aoa.length) best = i; });
       S.ui.imp = { nome: file.name, sheets: sheets, sheet: best, dest: {}, sel: {} };
-      prepSheet(); impCalc(); toast(null); render();
+      prepSheet(); impCalc(); toast(null); render(); mostraPassos();
     }).catch(function (e) { toast('Não foi possível ler o arquivo: ' + (e && e.message || e)); });
   }
   function prepSheet() { var I = S.ui.imp; I.aoa = I.sheets[I.sheet].aoa; I.hr = acharCabecalho(I.aoa); I.cols = autoCols(I.aoa[I.hr] || []); }
@@ -843,6 +887,224 @@ export function iniciarApp(rootEl, ctx) {
       toast(ks.length + (ks.length === 1 ? ' mês importado' : ' meses importados') + ' de ' + I.nome + '.');
       S.ui.imp = null; S.ui.ano = +ks[ks.length - 1].slice(0, 4); S.ui.mes = null; render();
     });
+  }
+
+  /* ================= Banco (extrato) ================= */
+  function decodifica(buf) { var t = new TextDecoder('utf-8').decode(buf); if (t.indexOf(String.fromCharCode(0xFFFD)) >= 0) t = new TextDecoder('windows-1252').decode(buf); return t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t; }
+  function slug(s) { return String(s || '').normalize('NFD').replace(/[^0-9A-Za-z]/g, '').slice(0, 20) || 'conta'; }
+  function mostraPassos() { requestAnimationFrame(function () { var el = rootEl.querySelector('.steps'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); }
+  function maiorSheet(sheets) { var b = 0; sheets.forEach(function (s, i) { if (s.aoa.length > sheets[b].aoa.length) b = i; }); return b; }
+  function abrirBanco(file) {
+    if (!file || !S.canWrite) return;
+    toast('Lendo ' + file.name + '…');
+    file.arrayBuffer().then(function (buf) {
+      var t = decodifica(buf);
+      if (CX.ehOFX(t)) {
+        var contas = CX.lerOFX(t).filter(function (c) { return c.itens.length; });
+        if (!contas.length) throw new Error('o OFX não tem lançamentos no período');
+        contas.forEach(function (c) { c.chave = CX.chaveConta(c.banco, c.conta); });
+        S.ui.impB = { nome: file.name, tipo: 'ofx', contas: contas, sel: {} };
+        return;
+      }
+      return lerArquivo(file).then(function (sheets) {
+        var E = S.erpcfg || {};
+        S.ui.impB = { nome: file.name, tipo: 'planilha', sheets: sheets, sheet: maiorSheet(sheets), rotulo: E.banco && E.banco !== 'A definir' ? E.banco : 'Conta bancária', sel: {} };
+        prepBanco();
+      });
+    }).then(function () { bancoCalc(); toast(null); render(); mostraPassos(); })
+      .catch(function (e) { toast('Não foi possível ler o extrato: ' + (e && e.message || e) + '.'); });
+  }
+  function prepBanco() { var B = S.ui.impB; B.aoa = B.sheets[B.sheet].aoa; B.hr = CX.achaCabecalho(B.aoa, CX.cabecalhoBanco); B.cols = CX.colunasAuto(B.aoa[B.hr] || [], CX.CAMPOS_BANCO); }
+  function bancoCalc() {
+    var B = S.ui.impB; if (!B) return;
+    if (B.tipo === 'planilha') {
+      var ex = CX.extratoDaPlanilha(B.aoa, B.hr, B.cols); B.ign = ex.ign;
+      B.contas = [{ banco: '', agencia: '', conta: '', nome: B.rotulo, ini: ex.ini, fim: ex.fim, saldo: null, itens: ex.itens, chave: 'pl-' + slug(B.rotulo) }];
+    }
+    B.meses = {};
+    B.contas.forEach(function (c, i) { var r = CX.resumoBanco(c.itens); Object.keys(r).forEach(function (k) { (B.meses[k] = B.meses[k] || {})[i] = r[k]; }); });
+    Object.keys(B.meses).forEach(function (k) { if (B.sel[k] == null) B.sel[k] = true; });
+  }
+  function bancoSteps() {
+    var B = S.ui.impB, ks = Object.keys(B.meses || {}).sort(), nSel = ks.filter(function (k) { return B.sel[k]; }).length;
+    var h = '<div class="card steps"><div class="spread"><div class="step-h"><span class="no">1</span><h2>Extrato · ' + esc(B.nome) + '</h2></div><div class="row">' +
+      (B.tipo === 'planilha' && B.sheets.length > 1 ? sel('bimp-sheet', B.sheets.map(function (s, i) { return [i, s.name]; }), B.sheet, 'data-in="bsheet" aria-label="Aba"') : '') + '<button class="btn" data-act="bimp-cancel">Cancelar</button></div></div>';
+    if (B.tipo === 'planilha') {
+      var hdr = B.aoa[B.hr] || [], colOpts = [['', '— não usar —']].concat(hdr.map(function (x, i) { return [i, x == null || x === '' ? 'Coluna ' + (i + 1) : String(x)]; }));
+      h += '<div class="step-h"><span class="no">2</span><h3>Colunas do extrato</h3><span class="note">' + (B.contas[0].itens.length) + ' lançamentos' + (B.ign ? ' · ' + B.ign + ' linhas de saldo ou sem valor ignoradas' : '') + '</span></div><div class="fields">' +
+        '<label class="f">Nome da conta<input class="inp" id="bimp-rot" data-in="brot" value="' + esc(B.rotulo) + '"></label>' +
+        CX.CAMPOS_BANCO.map(function (c) { return '<label class="f">' + c[1] + sel('bc-' + c[0], colOpts, B.cols[c[0]] == null ? '' : B.cols[c[0]], 'data-in="bcol" data-k="' + c[0] + '"') + '</label>'; }).join('') + '</div>';
+    } else {
+      h += '<div class="step-h"><span class="no">2</span><h3>' + (B.contas.length === 1 ? 'Conta' : B.contas.length + ' contas') + ' no arquivo OFX</h3></div><div class="contas">' + B.contas.map(function (c) {
+        return '<div class="spread conta"><span><b>' + esc(c.nome) + '</b>' + (c.agencia ? ' · ag. ' + esc(c.agencia) : '') + ' · conta ' + esc(c.conta || '—') + ' · ' + fmtDia(c.ini) + ' a ' + fmtDia(c.fim) + ' · ' + c.itens.length + ' lançamentos</span>' + (c.saldo ? '<b>Saldo ' + R2(c.saldo.valor) + ' <small class="muted">em ' + fmtDia(c.saldo.data) + '</small></b>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    var rows = ks.map(function (k) {
+      return B.contas.map(function (c, i) {
+        var r = B.meses[k][i]; if (!r) return '';
+        var ex = S.banco[k] && S.banco[k].contas && S.banco[k].contas[c.chave];
+        return '<tr><td>' + (i === 0 || !B.meses[k][i - 1] ? '<input type="checkbox" id="bm-' + k + '" data-in="bmes" data-k="' + k + '"' + (B.sel[k] ? ' checked' : '') + '>' : '') + '</td><td><label for="bm-' + k + '">' + MESES_LONGOS[+k.slice(5) - 1] + '/' + k.slice(0, 4) + '</label></td><td>' + esc(c.nome) + '</td><td class="n">' + r.n + '</td><td class="n">' + f2(r.ent) + '</td><td class="n neg">' + f2(-r.sai) + '</td><td class="n">' + f2(r.ent - r.sai) + '</td><td>' + (ex ? '<span class="chip info">atualiza o período</span>' : '') + '</td></tr>';
+      }).join('');
+    }).join('');
+    return h + '<div class="step-h"><span class="no">3</span><h3>Meses a gravar</h3><span class="note">Lançamentos de outros dias do mês já gravados são mantidos</span></div>' +
+      '<div class="tw"><table class="t"><thead><tr><th></th><th>Mês</th><th>Conta</th><th class="n">Lançamentos</th><th class="n">Entradas</th><th class="n">Saídas</th><th class="n">Variação</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="8" class="muted">Nenhum lançamento reconhecido. Confira as colunas de data e valor.</td></tr>') + '</tbody></table></div>' +
+      '<div class="row"><button class="btn pri" data-act="bimp-go"' + (nSel && S.canWrite ? '' : ' disabled') + '>Gravar ' + nSel + ' ' + (nSel === 1 ? 'mês' : 'meses') + ' do extrato</button></div></div>';
+  }
+  function importarBanco() {
+    var B = S.ui.impB; if (!B || !S.canWrite) return;
+    var ks = Object.keys(B.meses).filter(function (k) { return B.sel[k]; }).sort(); if (!ks.length) return;
+    var agora = iso(), seq = Promise.resolve(), n = 0;
+    ks.forEach(function (k) {
+      var doc = S.banco[k] || null;
+      B.contas.forEach(function (c) {
+        var its = c.itens.filter(function (x) { return x.d.slice(0, 7) === k; }); if (!its.length) return;
+        var ini = c.ini && c.ini > k + '-01' ? c.ini : k + '-01', fim = c.fim && c.fim < k + '-31' ? c.fim : k + '-31';
+        var info = { nome: c.nome, banco: c.banco || '', agencia: c.agencia || '', conta: c.conta || '', fonte: B.tipo, arquivo: B.nome, importadoEm: agora, por: S.uid || null };
+        if (c.saldo && c.saldo.data && c.saldo.data.slice(0, 7) === k) info.saldo = c.saldo;
+        doc = CX.mesclaConta(doc, c.chave, info, its, ini, fim); n += its.length;
+      });
+      if (doc) { S.banco[k] = doc; seq = seq.then(function () { return write('banco/' + k, doc); }); }
+    });
+    var E = S.erpcfg = S.erpcfg || {}, nm = B.contas[0] && B.contas[0].nome;
+    if ((!E.banco || E.banco === 'A definir') && SIST.banco.indexOf(nm) > 0) { E.banco = nm; saveErpCfg(); }
+    seq.then(function () { toast(n + ' lançamentos do extrato gravados em ' + ks.length + (ks.length === 1 ? ' mês.' : ' meses.')); S.ui.impB = null; touch(); render(); });
+  }
+
+  /* ================= Maquininha (vendas) ================= */
+  function abrirCartao(file) {
+    if (!file || !S.canWrite) return;
+    toast('Lendo ' + file.name + '…');
+    lerArquivo(file).then(function (sheets) {
+      S.ui.impC = { nome: file.name, sheets: sheets, sheet: maiorSheet(sheets), sel: {} };
+      prepCartao(); cartaoCalc(); toast(null); render(); mostraPassos();
+    }).catch(function (e) { toast('Não foi possível ler o relatório: ' + (e && e.message || e) + '.'); });
+  }
+  function prepCartao() { var C = S.ui.impC; C.aoa = C.sheets[C.sheet].aoa; C.hr = CX.achaCabecalho(C.aoa, CX.cabecalhoCartao); C.cols = CX.colunasAuto(C.aoa[C.hr] || [], CX.CAMPOS_CARTAO); }
+  function cartaoCalc() { var C = S.ui.impC; C.res = CX.vendasDaPlanilha(C.aoa, C.hr, C.cols); Object.keys(C.res.meses).forEach(function (k) { if (C.sel[k] == null) C.sel[k] = true; }); }
+  function cartaoSteps() {
+    var C = S.ui.impC, R = C.res, ks = Object.keys(R.meses).sort(), nSel = ks.filter(function (k) { return C.sel[k]; }).length;
+    var hdr = C.aoa[C.hr] || [], colOpts = [['', '— não usar —']].concat(hdr.map(function (x, i) { return [i, x == null || x === '' ? 'Coluna ' + (i + 1) : String(x)]; }));
+    var rows = ks.map(function (k) {
+      var M = R.meses[k], tc = CX.taxaCartao(M), px = M.formas.pix;
+      return '<tr><td><input type="checkbox" id="cm-' + k + '" data-in="cmes" data-k="' + k + '"' + (C.sel[k] ? ' checked' : '') + '></td><td><label for="cm-' + k + '">' + MESES_LONGOS[+k.slice(5) - 1] + '/' + k.slice(0, 4) + '</label></td><td class="n">' + M.n + '</td><td class="n">' + f2(M.bruto) + '</td><td class="n">' + f2(px ? px.bruto : 0) + '</td><td class="n">' + f2(tc ? tc.bruto : 0) + '</td><td class="n neg">' + f2(-M.taxa) + '</td><td class="n">' + (tc ? pct(tc.pct) : '—') + '</td><td class="n">' + (M.canc.n ? M.canc.n + ' · ' + f2(M.canc.bruto) : '—') + '</td><td>' + (S.cartao[k] ? '<span class="chip info">substitui</span>' : '') + '</td></tr>';
+    }).join('');
+    return '<div class="card steps"><div class="spread"><div class="step-h"><span class="no">1</span><h2>Vendas · ' + esc(C.nome) + '</h2></div><div class="row">' + (C.sheets.length > 1 ? sel('cimp-sheet', C.sheets.map(function (s, i) { return [i, s.name]; }), C.sheet, 'data-in="csheet" aria-label="Aba"') : '') + '<button class="btn" data-act="cimp-cancel">Cancelar</button></div></div>' +
+      '<div class="step-h"><span class="no">2</span><h3>Colunas do relatório</h3><span class="note">' + R.n + ' vendas reconhecidas' + (R.ign ? ' · ' + R.ign + ' linhas sem data ou valor ignoradas' : '') + '</span></div><div class="fields">' +
+      CX.CAMPOS_CARTAO.map(function (c) { return '<label class="f">' + c[1] + sel('cc-' + c[0], colOpts, C.cols[c[0]] == null ? '' : C.cols[c[0]], 'data-in="ccol" data-k="' + c[0] + '"') + '</label>'; }).join('') + '</div>' +
+      '<div class="step-h"><span class="no">3</span><h3>Meses a gravar</h3><span class="note">Cada mês marcado substitui o que já foi importado da maquininha</span></div>' +
+      '<div class="tw"><table class="t"><thead><tr><th></th><th>Mês</th><th class="n">Vendas</th><th class="n">Bruto</th><th class="n">Pix</th><th class="n">Cartão</th><th class="n">Taxas</th><th class="n">Taxa efetiva cartão</th><th class="n">Cancelamentos</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="10" class="muted">Nenhuma venda reconhecida. Confira as colunas de data e valor.</td></tr>') + '</tbody></table></div>' +
+      '<div class="row"><button class="btn pri" data-act="cimp-go"' + (nSel && S.canWrite ? '' : ' disabled') + '>Gravar ' + nSel + ' ' + (nSel === 1 ? 'mês' : 'meses') + ' de vendas</button></div></div>';
+  }
+  function importarCartao() {
+    var C = S.ui.impC; if (!C || !S.canWrite) return;
+    var ks = Object.keys(C.res.meses).filter(function (k) { return C.sel[k]; }).sort(); if (!ks.length) return;
+    var E = S.erpcfg = S.erpcfg || {}, agora = iso(), seq = Promise.resolve();
+    if ((!E.cartao || E.cartao === 'A definir') && /infinite/i.test(C.nome)) { E.cartao = 'InfinitePay'; saveErpCfg(); }
+    ks.forEach(function (k) {
+      var doc = Object.assign({}, C.res.meses[k], { sistema: E.cartao || 'A definir', fonte: 'arquivo', arquivo: C.nome, importadoEm: agora, por: S.uid || null });
+      S.cartao[k] = doc; seq = seq.then(function () { return write('cartao/' + k, doc); });
+    });
+    seq.then(function () { toast('Vendas de ' + ks.length + (ks.length === 1 ? ' mês gravadas.' : ' meses gravadas.')); S.ui.impC = null; touch(); render(); });
+  }
+
+  /* ================= Open Finance ================= */
+  var PLUGGY_JS = 'https://cdn.pluggy.ai/pluggy-connect/v2.7.0/pluggy-connect.js', pluggyP = null;
+  function ofStatus() {
+    S.ui.of.busy = true;
+    ctx.api({ acao: 'status' }, 'openfinance').then(function (r) { S.ui.of.cfg = !!r.configurado; })
+      .catch(function () { S.ui.of.cfg = false; }).then(function () { S.ui.of.busy = false; later(true); });
+  }
+  function ofCard() {
+    var st = S.ui.of; if (st.cfg == null && !st.busy) { st.busy = true; setTimeout(ofStatus, 0); }
+    var itens = (S.ofin && S.ofin.itens) || [], body;
+    if (st.cfg == null) body = '<p class="note">Verificando a conexão…</p>';
+    else if (!st.cfg) body = '<p class="note">Com o Open Finance, o extrato do banco e as movimentações da conta da maquininha entram sozinhos todo dia, com o consentimento dado pela clínica no próprio app do banco. Para ativar, a TBW contrata um agregador autorizado pelo Banco Central (Pluggy) e cadastra PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET na Vercel. Até lá, a importação por arquivo cobre as três fontes.</p>';
+    else {
+      body = (itens.length ? '<div class="contas">' + itens.map(function (it) {
+        return '<div class="spread conta"><span><b>' + esc(it.conector || 'Instituição') + '</b> · ' + (it.contas || []).length + ' conta(s)' + (it.status && it.status !== 'UPDATED' ? ' <span class="chip warn">' + esc(it.status === 'LOGIN_ERROR' || it.status === 'OUTDATED' ? 'reconectar' : it.status.toLowerCase()) + '</span>' : '') + '<br><small class="muted">' + (it.ultimaSync ? 'Sincronizado em ' + new Date(it.ultimaSync).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Ainda não sincronizado') + '</small></span>' +
+          (S.canWrite ? '<button class="btn sm" data-act="of-del" data-id="' + esc(it.id) + '">Desvincular</button>' : '') + '</div>';
+      }).join('') + '</div>' : '<p class="note">Nenhuma instituição conectada. Conecte o Sicoob e a conta InfinitePay da clínica: o titular autoriza no app do banco.</p>') +
+        (S.canWrite ? '<div class="row"><button class="btn pri" data-act="of-con"' + (st.busy ? ' disabled' : '') + '>Conectar instituição</button>' + (itens.length ? '<button class="btn" data-act="of-sinc"' + (st.busy ? ' disabled' : '') + '>' + (st.busy ? 'Sincronizando…' : 'Sincronizar agora') + '</button>' : '') + '<span class="note">Sincroniza os últimos 3 meses; a rotina diária mantém atualizado.</span></div>' : '');
+    }
+    return '<div class="card"><header><div><h2>Conexão automática · Open Finance</h2><p>Extrato direto da instituição, sem exportar arquivo</p></div><span class="chip ' + (st.cfg ? 'good' : 'warn') + '">' + (st.cfg == null ? '…' : st.cfg ? 'Ativa' : 'A ativar') + '</span></header>' + body + '</div>';
+  }
+  function carregaPluggy() {
+    if (window.PluggyConnect) return Promise.resolve(window.PluggyConnect);
+    if (!pluggyP) pluggyP = new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = PLUGGY_JS;
+      s.onload = function () { res(window.PluggyConnect); }; s.onerror = function () { pluggyP = null; rej(new Error('não foi possível abrir o conector do Open Finance')); };
+      document.head.appendChild(s);
+    });
+    return pluggyP;
+  }
+  function ofApi(corpo, msg) {
+    S.ui.of.busy = true; render();
+    return ctx.api(Object.assign({ clinica: ctx.clinica.id }, corpo), 'openfinance').then(function (r) { if (msg) toast(msg(r)); return r; })
+      .catch(function (e) { toast('Open Finance: ' + (e && e.message || e) + '.'); }).then(function (r) { S.ui.of.busy = false; render(); return r; });
+  }
+  function ofSincMsg(r) { return r ? (r.lancamentos || 0) + ' lançamentos de ' + (r.contas || 0) + ' conta(s) sincronizados' + (r.avisos && r.avisos.length ? ' · ' + r.avisos.join(' · ') : '') + '.' : ''; }
+  function ofConectar() {
+    S.ui.of.busy = true; render();
+    Promise.all([ctx.api({ acao: 'token', clinica: ctx.clinica.id }, 'openfinance'), carregaPluggy()]).then(function (r) {
+      var PC = r[1] && r[1].default ? r[1].default : r[1];
+      new PC({
+        connectToken: r[0].accessToken, language: 'pt',
+        onSuccess: function (d) { ofApi({ acao: 'vincular', itemId: d.item.id }, ofSincMsg); },
+        onError: function (e) { toast('Conexão não concluída: ' + (e && e.message || 'erro na instituição') + '.'); }
+      }).init();
+    }).catch(function (e) { toast('Open Finance: ' + (e && e.message || e) + '.'); }).then(function () { S.ui.of.busy = false; render(); });
+  }
+
+  /* ================= Conciliação ================= */
+  function vConc() {
+    var a = ano(), c = cfg(), U = S.ui.conc;
+    var rowsB = '', rowsC = '', nOk = 0, nCmp = 0, tb = 0, tt = 0, tAll = 0, mesesB = [];
+    range(0, 11).forEach(function (m) {
+      var k = ym(a, m), bd = S.banco[k], rd = S.real[k] && S.real[k].fonte !== 'exemplo' ? S.real[k] : null, cd = S.cartao[k];
+      var b = bd && bd.contas && Object.keys(bd.contas).length ? CX.totaisBancoMes(bd) : null, e = rd ? CX.caixaErpMes(rd.dfc) : null;
+      if (b) mesesB.push(m);
+      if (b || e) {
+        var st = CX.situacao(b, e), lb = { ok: ['good', 'Conferido'], diverge: ['warn', 'Divergente'], 'sem-extrato': ['', 'Sem extrato'], 'sem-erp': ['', 'Sem ERP'] }[st];
+        if (st === 'ok' || st === 'diverge') { nCmp++; if (st === 'ok') nOk++; }
+        rowsB += '<tr><td>' + mesNome(m) + '</td><td class="n">' + (b ? f0(b.ent) : '—') + '</td><td class="n neg">' + (b ? f0(-b.sai) : '—') + '</td><td class="n">' + (b ? f0(b['var']) : '—') + '</td><td class="n">' + (e ? f0(e.ent) : '—') + '</td><td class="n neg">' + (e ? f0(-e.sai) : '—') + '</td><td class="n">' + (e ? f0(e['var']) : '—') + '</td><td class="n ' + (b && e && st === 'diverge' ? 'neg' : '') + '">' + (b && e ? f0(b['var'] - e['var']) : '—') + '</td><td><span class="chip ' + lb[0] + '">' + lb[1] + '</span></td></tr>';
+      }
+      if (cd) {
+        var tc = CX.taxaCartao(cd), px = cd.formas && cd.formas.pix, etx = rd && rd.dre ? +(rd.dre.ded_tx || 0) : null;
+        if (tc) { tb += tc.bruto; tt += tc.taxa; } tAll += +cd.taxa || 0;
+        var alto = tc && tc.pct > c.c + 0.002;
+        rowsC += '<tr><td>' + mesNome(m) + '</td><td class="n">' + cd.n + '</td><td class="n">' + f0(cd.bruto) + '</td><td class="n">' + f0(px ? px.bruto : 0) + '</td><td class="n">' + f0(tc ? tc.bruto : 0) + '</td><td class="n neg">' + f2(-cd.taxa) + '</td><td class="n ' + (alto ? 'neg' : '') + '">' + (tc ? pct(tc.pct) : '—') + '</td><td class="n">' + (etx != null ? f2(-etx) : '—') + '</td><td class="n">' + (etx != null ? f2(etx - cd.taxa) : '—') + '</td><td class="n">' + (rd ? pct(cd.bruto / Math.max(1, T.fechaDRE(rd.dre).rb)) : '—') + '</td></tr>';
+      }
+    });
+    var cts = contasBanco(), saldo = 0, nS = 0, dS = '';
+    Object.keys(cts).forEach(function (k) { var s = cts[k].saldo; if (s) { saldo += s.valor; nS++; if (s.data > dS) dS = s.data; } });
+    var txAno = tb > 0 ? tt / tb : null;
+    var html = top('Conciliação', 'Extrato do banco × caixa do ERP · taxas reais da maquininha × premissa da precificação', anoCtl()) + '<div class="view">' +
+      '<div class="kpis">' + kpi('Saldo em conta', nS ? R0(saldo) : '—', nS ? nS + (nS === 1 ? ' conta' : ' contas') + ' · ' + fmtDia(dS) : 'importe o extrato com saldo') +
+      kpi('Meses conferidos · ' + a, nCmp ? nOk + ' de ' + nCmp : '—', nCmp ? (nCmp - nOk ? (nCmp - nOk) + ' com divergência' : 'extrato bate com o ERP') : 'precisa de extrato e ERP no mesmo mês', nCmp ? (nOk === nCmp ? 'good' : 'bad') : '') +
+      kpi('Taxa efetiva de cartão', txAno != null ? pct(txAno) : '—', 'premissa ' + pct(c.c), txAno == null ? '' : txAno > c.c + 0.002 ? 'bad' : 'good') +
+      kpi('Taxas de maquininha · ' + a, tAll ? R0(tAll) : '—', tb ? 'sobre ' + R0(tb) + ' em cartão' : 'importe o relatório de vendas') + '</div>';
+    if (txAno != null && Math.abs(txAno - c.c) > 0.005) html += '<div class="banner"><span><b>A taxa real de cartão em ' + a + ' é ' + pct(txAno) + ', contra ' + pct(c.c) + ' usada na precificação.</b> ' + (txAno > c.c ? 'As margens dos procedimentos pagos no cartão estão superestimadas.' : 'Há folga nas margens do cartão.') + '</span><a class="btn sm" href="#premissas">Ajustar premissa</a></div>';
+    html += '<div class="card"><header><div><h2>Banco × ERP · fluxo de caixa</h2><p>Variação do extrato (todas as contas) contra a variação de caixa do ERP. Tolerância de 1% do movimento ou R$ 50.</p></div></header>' +
+      (rowsB ? '<div class="tw"><table class="t"><thead><tr><th>Mês</th><th class="n">Entradas extrato</th><th class="n">Saídas extrato</th><th class="n">Variação extrato</th><th class="n">Entradas ERP</th><th class="n">Saídas ERP</th><th class="n">Variação ERP</th><th class="n">Diferença</th><th></th></tr></thead><tbody>' + rowsB + '</tbody></table></div><p class="note" style="margin-top:10px">Diferença costuma ser baixa esquecida no ERP, tarifa bancária não lançada ou transferência para conta que não foi importada (a da maquininha, por exemplo).</p>'
+        : '<div class="empty"><p class="note">Sem extrato nem realizado do ERP em ' + a + '.</p><a class="btn pri" href="#erp">Abrir conexões</a></div>') + '</div>';
+    html += '<div class="card"><header><div><h2>Maquininha · vendas e taxas</h2><p>Taxa efetiva só sobre crédito e débito, comparável à premissa de ' + pct(c.c) + '</p></div></header>' +
+      (rowsC ? '<div class="tw"><table class="t"><thead><tr><th>Mês</th><th class="n">Vendas</th><th class="n">Bruto</th><th class="n">Pix</th><th class="n">Cartão</th><th class="n">Taxas</th><th class="n">Taxa efetiva</th><th class="n">Taxa no ERP</th><th class="n">ERP − maquininha</th><th class="n">% da receita</th></tr></thead><tbody>' + rowsC + '</tbody></table></div>'
+        : '<div class="empty"><p class="note">Nenhum relatório de vendas importado em ' + a + '.</p><a class="btn pri" href="#erp">Importar vendas</a></div>') + '</div>';
+    if (mesesB.length) {
+      var m = U.mes != null && mesesB.indexOf(U.mes) >= 0 ? U.mes : mesesB[mesesB.length - 1], doc = S.banco[ym(a, m)], ks = Object.keys(doc.contas), q = T.semAcento(U.q || '');
+      var lst = [];
+      ks.forEach(function (ck) { if (U.conta && U.conta !== ck) return; (doc.contas[ck].itens || []).forEach(function (x) { if (!q || T.semAcento(x.desc).indexOf(q) >= 0) lst.push([x, doc.contas[ck].nome]); }); });
+      lst.sort(function (p, r) { return p[0].d.localeCompare(r[0].d); });
+      var ent = 0, sai = 0; lst.forEach(function (p) { if (p[0].v > 0) ent += p[0].v; else sai -= p[0].v; });
+      html += '<div class="card"><header><div><h2>Lançamentos do extrato</h2><p>' + lst.length + ' lançamentos · entradas ' + R2(ent) + ' · saídas ' + R2(sai) + '</p></div><div class="row">' +
+        sel('conc-mes', mesesB.map(function (x) { return [x, MESES_LONGOS[x] + '/' + a]; }), m, 'data-in="cmesv" aria-label="Mês"') +
+        (ks.length > 1 ? sel('conc-conta', [['', 'Todas as contas']].concat(ks.map(function (ck) { return [ck, doc.contas[ck].nome + (doc.contas[ck].conta ? ' · ' + doc.contas[ck].conta : '')]; })), U.conta || '', 'data-in="ccontav" aria-label="Conta"') : '') +
+        '<input class="inp" id="conc-q" data-in="cq" placeholder="Buscar no histórico" value="' + esc(U.q || '') + '" style="width:200px"></div></header>' +
+        '<div class="tw max" data-keep="cl"><table class="t"><thead><tr><th>Data</th>' + (ks.length > 1 ? '<th>Conta</th>' : '') + '<th>Histórico</th><th class="n">Valor</th></tr></thead><tbody>' +
+        (lst.slice(0, 600).map(function (p) { return '<tr><td>' + fmtDia(p[0].d) + '</td>' + (ks.length > 1 ? '<td>' + esc(p[1]) + '</td>' : '') + '<td class="nm">' + esc(p[0].desc) + '</td><td class="n ' + (p[0].v < 0 ? 'neg' : '') + '">' + f2(p[0].v) + '</td></tr>'; }).join('') || '<tr><td colspan="4" class="muted">Nada encontrado.</td></tr>') +
+        '</tbody></table></div>' + (lst.length > 600 ? '<p class="note">Mostrando os 600 primeiros. Use a busca para filtrar.</p>' : '') + '</div>';
+    }
+    return html + '</div>';
   }
 
   /* ================= Premissas e base ================= */
@@ -1121,6 +1383,18 @@ export function iniciarApp(rootEl, ctx) {
     drill: function (b) { var k = b.dataset.id; S.ui.open[k] = !S.ui.open[k]; render(); },
     'exp-dre': function () { expDem('dre'); }, 'exp-dfc': function () { expDem('dfc'); }, 'exp-prec': expPrec, 'exp-orc': expOrc,
     'imp-cancel': function () { S.ui.imp = null; render(); },
+    'bimp-cancel': function () { S.ui.impB = null; render(); },
+    'bimp-go': importarBanco,
+    'cimp-cancel': function () { S.ui.impC = null; render(); },
+    'cimp-go': function () {
+      var C = S.ui.impC; if (!C) return;
+      var subst = Object.keys(C.res.meses).filter(function (k) { return C.sel[k] && S.cartao[k]; });
+      if (subst.length) confirmar('Substituir vendas já importadas?', subst.join(', ') + ' já têm relatório da maquininha. Os dados deste arquivo substituem os anteriores nesses meses.', 'Gravar e substituir', importarCartao);
+      else importarCartao();
+    },
+    'of-con': ofConectar,
+    'of-sinc': function () { ofApi({ acao: 'sincronizar', meses: 3 }, ofSincMsg); },
+    'of-del': function (b) { var id = b.dataset.id; confirmar('Desvincular a instituição?', 'A sincronização automática dessa instituição para. Os lançamentos já gravados continuam na plataforma.', 'Desvincular', function () { ofApi({ acao: 'desvincular', itemId: id }, function () { return 'Instituição desvinculada.'; }); }); },
     'imp-go': function () {
       var I = S.ui.imp; if (!I || !I.res) return;
       var ks = Object.keys(I.res.meses).filter(function (k) { return I.sel[k]; });
@@ -1169,6 +1443,20 @@ export function iniciarApp(rootEl, ctx) {
     ocresc: function (t) { S.ui.orcCresc = parseBR(t.value); },
     erpnome: function (t) { if (!S.canWrite) return; S.erpcfg = S.erpcfg || {}; S.erpcfg.erp = t.value; saveErpCfg(); },
     'erp-file': function (t) { abrirImport(t.files && t.files[0]); t.value = ''; },
+    'banco-file': function (t) { abrirBanco(t.files && t.files[0]); t.value = ''; },
+    'cartao-file': function (t) { abrirCartao(t.files && t.files[0]); t.value = ''; },
+    bconome: function (t) { if (!S.canWrite) return; S.erpcfg = S.erpcfg || {}; S.erpcfg.banco = t.value; saveErpCfg(); },
+    cartnome: function (t) { if (!S.canWrite) return; S.erpcfg = S.erpcfg || {}; S.erpcfg.cartao = t.value; saveErpCfg(); },
+    bsheet: function (t) { var B = S.ui.impB; B.sheet = +t.value; B.sel = {}; prepBanco(); bancoCalc(); render(); },
+    bcol: function (t) { var B = S.ui.impB; B.cols[t.dataset.k] = t.value === '' ? null : +t.value; B.sel = {}; bancoCalc(); render(); },
+    brot: function (t) { var B = S.ui.impB; B.rotulo = t.value.trim() || B.rotulo; bancoCalc(); render(); },
+    bmes: function (t) { S.ui.impB.sel[t.dataset.k] = t.checked; render(); },
+    csheet: function (t) { var C = S.ui.impC; C.sheet = +t.value; C.sel = {}; prepCartao(); cartaoCalc(); render(); },
+    ccol: function (t) { var C = S.ui.impC; C.cols[t.dataset.k] = t.value === '' ? null : +t.value; C.sel = {}; cartaoCalc(); render(); },
+    cmes: function (t) { S.ui.impC.sel[t.dataset.k] = t.checked; render(); },
+    cmesv: function (t) { S.ui.conc.mes = +t.value; render(); },
+    ccontav: function (t) { S.ui.conc.conta = t.value; render(); },
+    cq: function (t) { S.ui.conc.q = t.value; render(); },
     isheet: function (t) { S.ui.imp.sheet = +t.value; S.ui.imp.dest = {}; S.ui.imp.sel = {}; prepSheet(); impCalc(); render(); },
     icol: function (t) { var I = S.ui.imp; I.cols[t.dataset.k] = t.value === '' ? null : +t.value; I.sel = {}; impCalc(); render(); },
     idest: function (t) { var I = S.ui.imp; I.dest[t.dataset.cat] = t.value; impCalc(); render(); },
@@ -1204,13 +1492,13 @@ export function iniciarApp(rootEl, ctx) {
   });
   document.addEventListener('change', function (e) {
     var t = e.target; if (!t.dataset || !t.dataset.in) return;
-    if (t.dataset.in === 'pq' || t.dataset.in === 'iq') return;
+    if (t.dataset.in === 'pq' || t.dataset.in === 'iq' || t.dataset.in === 'cq') return;
     var f = IN[t.dataset.in]; if (f) f(t, e);
     if (S.ui.pend) later(true);
   });
   document.addEventListener('input', function (e) {
     var t = e.target; if (!t.dataset) return;
-    if (t.dataset.in === 'pq' || t.dataset.in === 'iq') IN[t.dataset.in](t);
+    if (t.dataset.in === 'pq' || t.dataset.in === 'iq' || t.dataset.in === 'cq') IN[t.dataset.in](t);
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('inp') && e.target.tagName === 'INPUT') { e.target.blur(); }
@@ -1218,9 +1506,14 @@ export function iniciarApp(rootEl, ctx) {
   });
   document.addEventListener('focusin', function (e) { if (e.target.classList && e.target.classList.contains('cell')) { try { e.target.select(); } catch (x) { } } });
   document.addEventListener('focusout', function () { setTimeout(function () { if (S.ui.pend) { var a = document.activeElement; if (!a || !/INPUT|TEXTAREA/.test(a.tagName)) later(true); } }, 0); });
-  document.addEventListener('dragover', function (e) { var d = e.target.closest && e.target.closest('#drop'); if (d) { e.preventDefault(); d.classList.add('on'); } });
-  document.addEventListener('dragleave', function (e) { var d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('on'); });
-  document.addEventListener('drop', function (e) { var d = e.target.closest && e.target.closest('#drop'); if (d) { e.preventDefault(); d.classList.remove('on'); if (S.canWrite) abrirImport(e.dataTransfer.files[0]); } });
+  document.addEventListener('dragover', function (e) { var d = e.target.closest && e.target.closest('[data-drop]'); if (d) { e.preventDefault(); d.classList.add('on'); } });
+  document.addEventListener('dragleave', function (e) { var d = e.target.closest && e.target.closest('[data-drop]'); if (d) d.classList.remove('on'); });
+  document.addEventListener('drop', function (e) {
+    var d = e.target.closest && e.target.closest('[data-drop]'); if (!d) return;
+    e.preventDefault(); d.classList.remove('on'); if (!S.canWrite) return;
+    var f = e.dataTransfer.files[0], tp = d.dataset.drop;
+    if (tp === 'banco') abrirBanco(f); else if (tp === 'cartao') abrirCartao(f); else abrirImport(f);
+  });
 
   boot();
 }

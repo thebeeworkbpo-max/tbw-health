@@ -87,9 +87,9 @@ function telaTrocarSenha(obrigatoria) {
 
 async function sair() { try { await supa.auth.signOut(); } catch (e) { /* segue */ } location.hash = ''; location.reload(); }
 
-async function api(corpo) {
+async function api(corpo, rota) {
   const { data } = await supa.auth.getSession();
-  const r = await fetch('/api/usuarios', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + (data.session ? data.session.access_token : '') }, body: JSON.stringify(corpo) });
+  const r = await fetch('/api/' + (rota || 'usuarios'), { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + (data.session ? data.session.access_token : '') }, body: JSON.stringify(corpo) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.erro || 'falha ' + r.status);
   return j;

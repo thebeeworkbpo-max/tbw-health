@@ -323,8 +323,8 @@ var TBW = (function () {
     if (typeof v === 'number') return v;
     if (v == null) return NaN;
     var s = String(v).trim(); if (!s) return NaN;
-    var neg = /^\(.*\)$/.test(s) || /-\s*$/.test(s) || /^-/.test(s) || /\bD$/.test(s);
-    s = s.replace(/[R$\s()]/g, '').replace(/[CD]$/, '').replace(/-/g, '');
+    var neg = /^\(.*\)$/.test(s) || /-\s*$/.test(s) || /^-/.test(s) || /[\d\s]D$/i.test(s);
+    s = s.replace(/[R$\s()]/g, '').replace(/[CD]$/i, '').replace(/-/g, '');
     if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
     var n = Number(s); if (!isFinite(n)) return NaN;
     return neg ? -n : n;

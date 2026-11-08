@@ -63,3 +63,24 @@ A tela de Administração e o primeiro acesso usam as funções em `api/`; local
 cd "C:\Users\DELL\Documents\TBW Health\tbw-health"
 powershell -ExecutionPolicy Bypass -File .\deploy.ps1 "descrição da alteração"
 ```
+
+## Conexões da clínica (ERP, banco e maquininha)
+
+Tela **Conexões**: cada clínica registra o ERP, o banco e a maquininha e importa os arquivos.
+
+- **ERP** (ex.: Support Clinic): relatório de contas pagas e recebidas → DRE e fluxo de caixa realizados, com de-para.
+- **Banco** (ex.: Sicoob): extrato em **OFX** (ou Excel/CSV) → `banco/AAAA-MM`. Reimportar um período só troca os dias do arquivo.
+- **Maquininha** (ex.: InfinitePay): relatório de vendas em CSV/Excel → `cartao/AAAA-MM` (bruto, taxas, líquido, por forma e bandeira).
+
+Tela **Conciliação**: variação do extrato × variação de caixa do ERP por mês, taxa efetiva de cartão × premissa da precificação e a lista de lançamentos do extrato.
+
+### Open Finance (opcional, automático)
+
+`api/openfinance.js` sincroniza extratos via Pluggy (Sicoob e conta InfinitePay são suportados por Open Finance). Fica inativo até cadastrar na Vercel:
+
+| Variável | Para quê |
+|---|---|
+| `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` | credenciais do painel da Pluggy (plano com Open Finance habilitado) |
+| `CRON_SECRET` | protege a rotina diária (`vercel.json` → crons, 06h15 de Brasília) |
+
+Testes: `npm test` roda o motor, os leitores de extrato/vendas e uma sincronização simulada do Open Finance.
