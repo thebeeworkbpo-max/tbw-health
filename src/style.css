@@ -275,7 +275,7 @@ svg.chart .lbl-strong { fill: var(--ink); font-weight: 600; }
 .auth { min-height: 100%; display: flex; flex-direction: column; background: var(--bg); }
 .auth-hero { height: clamp(230px, 24vw, 340px); flex: none; display: grid; place-items: center; padding: 0 20px 40px; border-top: 6px solid #005984;
   background-color: var(--navy);
-  background-image: url('https://static.wixstatic.com/media/b8e48d_0950b47675714267af109d335ee3b6bd~mv2.jpg/v1/fill/w_2240,h_640,al_c,q_85,enc_auto/hero-tbw-health.jpg'), linear-gradient(120deg, #1A3957 0%, #0D2338 100%);
+  background-image: linear-gradient(180deg, rgba(10, 30, 50, 0.74) 0%, rgba(13, 38, 62, 0.68) 100%), url('https://static.wixstatic.com/media/b8e48d_0950b47675714267af109d335ee3b6bd~mv2.jpg/v1/fill/w_2240,h_640,al_c,q_85,enc_auto/hero-tbw-health.jpg'), linear-gradient(120deg, #1A3957 0%, #0D2338 100%);
   background-size: cover; background-position: center; }
 .auth-logo { display: flex; align-items: center; gap: clamp(14px, 2vw, 28px); }
 .auth-logo img { height: clamp(64px, 8vw, 112px); width: auto; display: block; }
