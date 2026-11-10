@@ -50,7 +50,7 @@ export function iniciarApp(rootEl, ctx) {
   var REQ = ['config/geral', 'base/insumos', 'base/procedimentos', 'orcamento', 'realizado', 'erp/depara', 'erp/config', 'banco', 'cartao', 'conexoes/openfinance'];
   var COLS = { orcamento: 'orcs', realizado: 'real', banco: 'banco', cartao: 'cartao' };
 
-  function cfg() { var c = S.cfg || {}; return { t: c.t != null ? +c.t : 0.14, c: c.c != null ? +c.c : 0.06, modo: c.modo || 'planilha', meta: c.meta != null ? +c.meta : 0.35, clinica: c.clinica || (ctx.clinica ? ctx.clinica.nome : 'TBW Health'), ano: c.ano, origem: c.origem }; }
+  function cfg() { var c = S.cfg || {}; return { t: c.t != null ? +c.t : 0.14, c: c.c != null ? +c.c : 0.06, modo: c.modo || 'planilha', fc: c.fc > 0 ? +c.fc : null, meta: c.meta != null ? +c.meta : 0.35, clinica: c.clinica || (ctx.clinica ? ctx.clinica.nome : 'TBW Health'), ano: c.ano, origem: c.origem }; }
   var memo = {};
   function insMap() { if (memo.imV !== S.ver) { memo.im = T.insMapOf(S.insumos || []); memo.imV = S.ver; } return memo.im; }
   function procMap() { if (memo.pmV !== S.ver) { memo.pm = T.procMapOf(S.procs || []); memo.pmV = S.ver; } return memo.pm; }
@@ -356,7 +356,7 @@ export function iniciarApp(rootEl, ctx) {
         '<td><button class="btn ghost danger" data-act="rdel" data-i="' + i + '" aria-label="Remover insumo"' + dis() + '>✕</button></td></tr>';
     }).join('');
     var opts = (S.insumos || []).map(function (i) { return '<option value="' + esc(i.n) + '"></option>'; }).join('');
-    var alvoTxt = alvo === null ? 'Com esse honorário e esses impostos, a margem de ' + pct(meta) + ' não é alcançável.' : alvo === 'livre' ? 'Sem custo direto: a margem percentual não depende do preço.' : 'Preço PIX de <b>' + R2(alvo) + '</b> (cartão ' + R2(alvo / (1 - c.t - c.c)) + ') entrega ' + pct(meta) + ' de margem no PIX.';
+    var alvoTxt = alvo === null ? 'Com esse honorário e esses impostos, a margem de ' + pct(meta) + ' não é alcançável.' : alvo === 'livre' ? 'Sem custo direto: a margem percentual não depende do preço.' : 'Preço PIX de <b>' + R2(alvo) + '</b> (cartão ' + R2(c.fc ? alvo * c.fc : alvo / (1 - c.t - c.c)) + ') entrega ' + pct(meta) + ' de margem no PIX.';
     return '<div class="drawer-bg" data-act="pclose"></div><aside class="drawer" role="dialog" aria-label="Procedimento"><header><div><small>Procedimento #' + p.o + ' · ' + esc(grupoNome(p.g)) + '</small><h2>' + esc(p.n) + '</h2></div><button class="btn sm" data-act="pclose">Fechar</button></header><div class="body">' +
       '<div class="row">' + chipSt(st) + '<span class="note">Modelo de cálculo: ' + (c.modo === 'revisado' ? 'revisado TBW' : 'planilha v6') + '</span></div>' +
       '<div class="card"><div class="fields">' +
@@ -692,7 +692,7 @@ export function iniciarApp(rootEl, ctx) {
     ['sit', 'Situação', /situac|status/]
   ];
   var SIST = {
-    erp: ['A definir', 'Support Clinic', 'Conta Azul', 'Omie', 'Klingo', 'Bling', 'Outro'],
+    erp: ['A definir', 'Support Clinic', 'Amigo', 'Planilha própria', 'Conta Azul', 'Omie', 'Klingo', 'Bling', 'Outro'],
     banco: ['A definir', 'Sicoob', 'Sicredi', 'Itaú', 'Bradesco', 'Banco do Brasil', 'Caixa', 'Santander', 'Inter', 'Outro'],
     cartao: ['A definir', 'InfinitePay', 'Stone', 'Cielo', 'Rede', 'PagBank', 'Getnet', 'Mercado Pago', 'SumUp', 'Outro']
   };
@@ -859,6 +859,7 @@ export function iniciarApp(rootEl, ctx) {
     }
     return Promise.all([loadXLSX(), file.arrayBuffer()]).then(function (r) {
       var X = r[0], wb = X.read(new Uint8Array(r[1]), { type: 'array', cellDates: true });
+      CX.corrigeData1904(wb);
       return wb.SheetNames.map(function (n) { return { name: n, aoa: X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: false }) }; });
     });
   }
@@ -866,7 +867,9 @@ export function iniciarApp(rootEl, ctx) {
     if (!file) return;
     toast('Lendo ' + file.name + '…');
     lerArquivo(file).then(function (sheets) {
-      var best = 0; sheets.forEach(function (s, i) { if (s.aoa.length > sheets[best].aoa.length) best = i; });
+      var fx = CX.planilhaFluxo(sheets), best = 0;
+      if (fx) sheets = [{ name: 'Entradas e saídas', aoa: fx }].concat(sheets);
+      else sheets.forEach(function (s, i) { if (s.aoa.length > sheets[best].aoa.length) best = i; });
       S.ui.imp = { nome: file.name, sheets: sheets, sheet: best, dest: {}, sel: {} };
       prepSheet(); impCalc(); toast(null); render(); mostraPassos();
     }).catch(function (e) { toast('Não foi possível ler o arquivo: ' + (e && e.message || e)); });
@@ -1115,11 +1118,12 @@ export function iniciarApp(rootEl, ctx) {
       '<label class="f">Nome da clínica<input class="inp" id="c-nome" data-in="cnome" value="' + esc(c.clinica) + '"' + dis() + '></label>' +
       '<label class="f">Impostos sobre o faturamento (%)<input class="inp n" id="c-t" data-in="ct" value="' + esc(nf2.format(c.t * 100)) + '"' + dis() + '></label>' +
       '<label class="f">Taxa média de cartão (%)<input class="inp n" id="c-c" data-in="cc" value="' + esc(nf2.format(c.c * 100)) + '"' + dis() + '></label>' +
+      '<label class="f">Cartão: acréscimo sobre o PIX (%)<input class="inp n" id="c-fc" data-in="cfc" placeholder="calculado" value="' + (c.fc ? esc(nf2.format((c.fc - 1) * 100)) : '') + '"' + dis() + '></label>' +
       '<label class="f">Meta de margem no PIX (%)<input class="inp n" id="c-meta" data-in="cmeta" value="' + esc(nf1.format(c.meta * 100)) + '"' + dis() + '></label>' +
       '<label class="f">Ano em foco<input class="inp n" id="c-ano" data-in="cano" value="' + esc(c.ano || ano()) + '"' + dis() + '></label></div></div>' +
       '<div class="card"><header><div><h2>Modelo de cálculo da margem</h2><p>Escolha como impostos, taxa de cartão e honorário incidem em cada procedimento.</p></div>' + (S.canWrite ? seg('cmodo', [['planilha', 'Planilha v6'], ['revisado', 'Revisado TBW']], c.modo) : '') + '</header>' +
-      '<div class="grid g2"><div class="stack"><h3>Planilha v6 (padrão)</h3><p class="note">Reproduz a planilha da clínica célula a célula. Preço no cartão = preço PIX ÷ (1 − impostos − taxa). Imposto do PIX calculado “por dentro” (preço ÷ (1 − ' + pct(c.t) + ') × ' + pct(c.t) + ', ' + pct(c.t / (1 - c.t)) + ' efetivo). Honorário calculado sobre o preço de cartão nas duas formas de pagamento.</p></div>' +
-      '<div class="stack"><h3>Revisado TBW</h3><p class="note">Impostos de ' + pct(c.t) + ' e taxa de cartão de ' + pct(c.c) + ' aplicados sobre o preço efetivamente cobrado. Honorário sobre o preço de cada forma de pagamento (PIX ou cartão). Tende a mostrar margem maior no PIX que a planilha.</p></div></div></div>' +
+      '<div class="grid g2"><div class="stack"><h3>Planilha v6 (padrão)</h3><p class="note">Reproduz a planilha da clínica célula a célula. Preço no cartão = ' + (c.fc ? 'preço PIX × ' + c.fc.toLocaleString('pt-BR', { maximumFractionDigits: 4 }) + ' (acréscimo fixo)' : 'preço PIX ÷ (1 − impostos − taxa)') + '. Imposto do PIX calculado “por dentro” (preço ÷ (1 − ' + pct(c.t) + ') × ' + pct(c.t) + ', ' + pct(c.t / (1 - c.t)) + ' efetivo). Honorário calculado sobre o preço de cartão nas duas formas de pagamento.</p></div>' +
+      '<div class="stack"><h3>Revisado TBW</h3><p class="note">Impostos de ' + pct(c.t) + ' e taxa de cartão de ' + pct(c.c) + ' aplicados sobre o preço efetivamente cobrado' + (c.fc ? ', com o cartão a preço PIX × ' + c.fc.toLocaleString('pt-BR', { maximumFractionDigits: 4 }) : '') + '. Honorário sobre o preço de cada forma de pagamento (PIX ou cartão). Tende a mostrar margem maior no PIX que a planilha.</p></div></div></div>' +
       '<div class="card"><header><div><h2>Base de precificação</h2><p>' + esc((S.procs || []).length + ' procedimentos e ' + (S.insumos || []).length + ' insumos · origem: ' + (c.origem || '—')) + '</p></div>' +
       '<label class="btn" for="base-file2">Importar nova versão da planilha</label><input type="file" id="base-file2" accept=".xlsx,.xlsm,.xls" hidden data-in="base-file"' + dis() + '></header>' +
       '<p class="note">A importação substitui preços, honorários, fichas técnicas e custos pelos da planilha nova (layout TBW). Classificação CMV/CSV e linha de receita são mantidas para os itens com o mesmo nome. Os volumes do orçamento continuam ligados pelo número de ordem do procedimento.</p></div>' +
@@ -1129,7 +1133,7 @@ export function iniciarApp(rootEl, ctx) {
   function parseBase(file) {
     return Promise.all([loadXLSX(), file.arrayBuffer()]).then(function (r) {
       return lerPlanilha(r[0], new Uint8Array(r[1]), file.name, { insumos: S.insumos, procs: S.procs });
-    }).then(function (b) { return { ins: b.insumos, procs: b.procs, t: b.t, c: b.c, nome: b.nome }; });
+    }).then(function (b) { return { ins: b.insumos, procs: b.procs, t: b.t, c: b.c, fc: b.fc, modo: b.modo, nome: b.nome }; });
   }
 
   /* ================= Exportação ================= */
@@ -1465,6 +1469,7 @@ export function iniciarApp(rootEl, ctx) {
     cnome: function (t) { editCfg(function (c) { c.clinica = t.value.trim() || c.clinica; }); },
     ct: function (t) { editCfg(function (c) { c.t = Math.min(0.6, Math.max(0, parseBR(t.value) / 100)); }); },
     cc: function (t) { editCfg(function (c) { c.c = Math.min(0.3, Math.max(0, parseBR(t.value) / 100)); }); },
+    cfc: function (t) { var v = String(t.value || '').trim(); editCfg(function (c) { if (!v) delete c.fc; else c.fc = Math.round((1 + Math.min(100, Math.max(0, parseBR(v))) / 100) * 10000) / 10000; }); },
     cmeta: function (t) { editCfg(function (c) { c.meta = Math.min(0.95, Math.max(0, parseBR(t.value) / 100)); }); },
     cano: function (t) { var v = Math.round(parseBR(t.value)); if (v > 2000 && v < 2100) { editCfg(function (c) { c.ano = v; }); S.ui.ano = v; } },
     'base-file': function (t) {
@@ -1473,7 +1478,7 @@ export function iniciarApp(rootEl, ctx) {
       parseBase(f).then(function (b) {
         var go = function () {
           S.insumos = b.ins; S.procs = b.procs; S.cfg = S.cfg || { clinica: ctx.clinica.nome, modo: 'planilha', meta: 0.35, ano: new Date().getFullYear() };
-          if (b.t != null && isFinite(b.t)) S.cfg.t = b.t; if (b.c != null && isFinite(b.c)) S.cfg.c = b.c; S.cfg.origem = b.nome;
+          if (b.t != null && isFinite(b.t)) S.cfg.t = b.t; if (b.c != null && isFinite(b.c)) S.cfg.c = b.c; if (b.fc) S.cfg.fc = b.fc; else delete S.cfg.fc; if (b.modo) S.cfg.modo = b.modo; S.cfg.origem = b.nome;
           touch(); write('base/insumos', { items: S.insumos, atualizadoEm: iso() }); write('base/procedimentos', { items: S.procs, atualizadoEm: iso() }); write('config/geral', S.cfg);
           toast('Base atualizada: ' + b.procs.length + ' procedimentos e ' + b.ins.length + ' insumos.'); render();
         };

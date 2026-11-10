@@ -130,7 +130,8 @@ var TBW = (function () {
       var i = insMap[it[0]]; if (!i) return;
       var v = num(it[1]) * num(i.c); O += v; cat[i.cat] = (cat[i.cat] || 0) + v;
     });
-    var I = E / (1 - (t + c));
+    // preço no cartão: fator fixo sobre o PIX (ex.: tabela 10x = PIX × 1,137) ou calculado por dentro dos impostos e da taxa
+    var I = num(cfg.fc) > 0 ? E * num(cfg.fc) : E / (1 - (t + c));
     var F, J, Sc, Np, Nc;
     if (cfg.modo === 'revisado') { F = E * t; J = I * t; Sc = I * c; Np = E * h; Nc = I * h; }
     else {

@@ -56,3 +56,11 @@ const tx = C.taxaCartao(M); assert.equal(tx.bruto, 1200); assert.ok(Math.abs(tx.
 assert.equal(C.situacao({ ent: 1000, sai: 400, 'var': 600 }, { ent: 990, sai: 400, 'var': 590 }), 'ok');
 assert.equal(C.situacao({ ent: 1000, sai: 400, 'var': 600 }, { ent: 500, sai: 400, 'var': 100 }), 'diverge');
 console.log('conexões: todos os testes passaram');
+
+// calendário de 1904 (Excel para Mac): data lida 4 anos e 1 dia antes do texto da célula
+const wb1904 = { Workbook: { WBProps: { date1904: true } }, SheetNames: ['A'], Sheets: { A: { '!ref': 'A1:A2', A1: { t: 'd', v: new Date(2020, 0, 1), w: '1/2/24' }, A2: { t: 'd', v: new Date(2020, 1, 28), w: '2/29/24' } } } };
+assert.ok(C.corrigeData1904(wb1904));
+assert.equal(C.parseDia(wb1904.Sheets.A.A1.v), '2024-01-02'); assert.equal(C.parseDia(wb1904.Sheets.A.A2.v), '2024-02-29');
+const wbOk = { Workbook: { WBProps: { date1904: true } }, SheetNames: ['A'], Sheets: { A: { A1: { t: 'd', v: new Date(2024, 0, 2), w: '1/2/24' } } } };
+assert.equal(C.corrigeData1904(wbOk), false);
+console.log('conexões: calendário 1904 ok');

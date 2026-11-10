@@ -217,3 +217,62 @@ export function situacao(banco, erp) {
   const tol = Math.max(50, 0.01 * Math.max(banco.ent + banco.sai, erp.ent + erp.sai));
   return Math.abs(banco['var'] - erp['var']) <= tol ? 'ok' : 'diverge';
 }
+
+/* Planilhas do Excel para Mac usam o calendário de 1904: as datas chegam 4 anos e 1 dia antes.
+   Confere a data lida com o texto exibido na célula e, se estiver deslocada, corrige todas as datas da pasta. */
+export function corrigeData1904(wb) {
+  if (!(wb && wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904)) return false;
+  let desloca = null; const datas = [];
+  (wb.SheetNames || []).forEach((n) => {
+    const ws = wb.Sheets[n] || {};
+    Object.keys(ws).forEach((k) => {
+      const c = ws[k]; if (k[0] === '!' || !c || !(c.v instanceof Date)) return;
+      datas.push(c);
+      if (desloca == null && c.w) {
+        const w = String(c.w); let m = w.match(/(?:19|20)\d{2}/), y = m ? +m[0] : null;
+        if (y == null && (m = w.match(/(\d{2})\D*$/))) y = 2000 + +m[1];
+        if (y != null) desloca = y - c.v.getFullYear() === 4 ? 1462 : 0;
+      }
+    });
+  });
+  if (!desloca) return false;
+  datas.forEach((c) => { c.v = new Date(c.v.getTime() + desloca * 86400000); });
+  return true;
+}
+
+/* Controle financeiro em planilha com abas ENTRADA e SAÍDA (data, plano de contas, cliente/fornecedor, descrição, status, valor).
+   Junta as duas abas numa tabela única com a coluna Tipo, no formato do importador do ERP.
+   Tributos ("IMPOSTOS ...") são detalhados pelo favorecido: Simples vai para deduções, FGTS para pessoal. */
+function nomeTributo(f) {
+  const s = sa(f);
+  if (/simples/.test(s)) return 'Simples Nacional';
+  if (/receita federal|darf/.test(s)) return 'Receita Federal';
+  if (/fundo de garantia|fgts/.test(s)) return 'FGTS';
+  if (/inss|previd/.test(s)) return 'INSS';
+  if (/prefeitura|iss\b/.test(s)) return 'Prefeitura';
+  return limpa(f, 40).toLowerCase().replace(/(^|\s)\S/g, (x) => x.toUpperCase()) || 'Diversos';
+}
+export function planilhaFluxo(sheets) {
+  const achar = (re) => (sheets || []).find((s) => re.test(sa(s.name)));
+  const ent = achar(/^entrada|^receita/), sai = achar(/^saida|^despesa/);
+  if (!ent || !sai) return null;
+  const out = [['Data', 'Categoria', 'Cliente / fornecedor', 'Descrição', 'Situação', 'Valor', 'Tipo']];
+  let ok = 0;
+  [[ent, 'Receita'], [sai, 'Despesa']].forEach(([s, tipo]) => {
+    const aoa = s.aoa || [];
+    const hr = achaCabecalho(aoa, (t) => t.some((x) => /^data/.test(x)) && t.some((x) => /^valor/.test(x)) && t.some((x) => /plano de conta|categoria/.test(x)));
+    const h = (aoa[hr] || []).map((x) => sa(x)), col = (re) => h.findIndex((x) => re.test(x));
+    const cD = col(/^data/), cP = col(/plano de conta|categoria/), cF = col(/cliente|fornecedor|favorecido/), cX = col(/descri|historico/), cS = col(/status|situac/), cV = col(/^valor/);
+    if (cD < 0 || cP < 0 || cV < 0) return;
+    ok++;
+    for (let r = hr + 1; r < aoa.length; r++) {
+      const row = aoa[r] || [], v = T.parseValor(row[cV]);
+      if (row[cD] == null || row[cD] === '' || !isFinite(v) || v === 0) continue;
+      let cat = limpa(row[cP]) || '(sem categoria)';
+      const forn = cF >= 0 ? limpa(row[cF]) : '';
+      if (tipo === 'Despesa' && /^impostos?\b/.test(sa(cat)) && forn) cat += ' · ' + nomeTributo(forn);
+      out.push([row[cD], cat, forn, cX >= 0 ? limpa(row[cX]) : '', cS >= 0 ? row[cS] : null, Math.abs(v), tipo]);
+    }
+  });
+  return ok === 2 && out.length > 1 ? out : null;
+}
