@@ -313,3 +313,8 @@ svg.chart .lbl-strong { fill: var(--ink); font-weight: 600; }
 .conta { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft-2); font-size: 13px; }
 @media (max-width: 1100px) { .grid.g3:has(.fonte) { grid-template-columns: 1fr; } }
 .steps { scroll-margin-top: 96px; }
+
+/* Visão do cliente */
+.side-upd { font-size: 12px; line-height: 1.45; color: rgba(255,255,255,.72); padding: 8px 10px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; margin-bottom: 10px; }
+.side-btn.wide { width: 100%; justify-content: center; margin-top: 6px; }
+.preview-cli { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 28px; background: #E6F6FF; border-bottom: 1px solid #9BD8F7; color: var(--navy); font-size: 13px; }

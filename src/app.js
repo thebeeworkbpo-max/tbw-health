@@ -191,9 +191,13 @@ export function iniciarApp(rootEl, ctx) {
     { id: 'premissas', n: 'Premissas', ic: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>' },
     { id: 'admin', n: 'Administração', sec: 'TBW', ic: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>' }
   ];
+  /* Visão do cliente: o dono da clínica vê resultados e preços, sem as telas internas da TBW (conexões, conciliação, premissas, insumos, administração). */
+  var CLIENTE_VIEWS = ['visao', 'dre', 'dfc', 'orcamento', 'precificacao'];
+  function visaoCliente() { return ctx.papel === 'cliente' || !!S.ui.comoCliente; }
+  function podeVer(id) { if (id === 'admin') return !!ctx.isAdmin && !visaoCliente(); return !visaoCliente() || CLIENTE_VIEWS.indexOf(id) >= 0; }
   function route() {
     var h = (location.hash || '').replace('#', '');
-    S.ui.view = VIEWS.some(function (v) { return v.id === h && (v.id !== 'admin' || ctx.isAdmin); }) ? h : (ctx.clinica ? 'visao' : (ctx.isAdmin ? 'admin' : 'visao'));
+    S.ui.view = VIEWS.some(function (v) { return v.id === h && podeVer(v.id); }) ? h : (ctx.clinica ? 'visao' : (podeVer('admin') ? 'admin' : 'visao'));
   }
   window.addEventListener('hashchange', function () { route(); if (S.ui.view !== 'precificacao') S.ui.sel = null; render(); window.scrollTo(0, 0); });
 
@@ -206,6 +210,12 @@ export function iniciarApp(rootEl, ctx) {
     var y = window.scrollY;
     S.ui.pend = false;
     root.innerHTML = shell();
+    if (visaoCliente()) { // sem atalhos para telas internas e sem botões de edição
+      root.querySelectorAll('a[href^="#"]').forEach(function (a) { var id = a.getAttribute('href').slice(1); if (id && !podeVer(id)) a.remove(); });
+      root.querySelectorAll('button[disabled]').forEach(function (b) { b.remove(); });
+      var add = root.querySelector('#r-add-ins'); if (add && add.closest('.row')) add.closest('.row').remove();
+      var addO = root.querySelector('#o-add-sel'); if (addO) addO.remove();
+    }
     root.querySelectorAll('[data-keep]').forEach(function (el) { var s = scrolls[el.dataset.keep]; if (s) { el.scrollTop = s[0]; el.scrollLeft = s[1]; } });
     window.scrollTo(0, y);
     if (fid) { var el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (ss != null) el.setSelectionRange(ss, se); } catch (e) { } } }
@@ -213,19 +223,30 @@ export function iniciarApp(rootEl, ctx) {
   }
   function shell() {
     var c = cfg(), v = S.ui.view;
-    var nav = VIEWS.filter(function (x) { return (x.id !== 'admin' || ctx.isAdmin) && (ctx.clinica || x.id === 'admin'); }).map(function (x) {
+    var nav = VIEWS.filter(function (x) { return podeVer(x.id) && (ctx.clinica || x.id === 'admin'); }).map(function (x) {
       return (x.sec ? '<div class="sec">' + x.sec + '</div>' : '') + '<a href="#' + x.id + '"' + (x.id === v ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + x.ic + '</svg>' + x.n + '</a>';
     }).join('');
     var body;
     if (!S.ready) body = loading();
-    else if (v === 'admin' && ctx.isAdmin) body = vAdmin();
+    else if (v === 'admin' && podeVer('admin')) body = vAdmin();
     else if (!ctx.clinica) body = top('Nenhuma clínica cadastrada', '') + '<div class="view"><div class="card empty"><h2>Cadastre a primeira clínica</h2><p class="note">Na Administração, crie a clínica e depois importe a planilha de precificação dela.</p><a class="btn pri" href="#admin">Abrir administração</a></div></div>';
-    else if (!S.procs && v !== 'premissas') body = onboarding();
+    else if (!S.procs && v !== 'premissas') body = visaoCliente() ? emPreparo() : onboarding();
     else body = viewHtml(v);
-    return '<div class="app"><aside class="side"><div class="brand"><div class="brand-mark"><img src="/marca/logo-tbw-branco.png" alt="TBW" width="99" height="36"><span class="health">HEALTH</span></div><small>Gestão financeira da clínica</small></div>' + sideClinica() + '<nav class="nav" aria-label="Seções">' + nav + '</nav>' +
-      '<div class="side-foot"><div id="sync"></div><div class="who"><b>' + esc(ctx.perfil.nome || ctx.perfil.email) + '</b><span>' + esc(ctx.perfil.email) + ' · ' + esc(PAPEL[ctx.papel] || ctx.papel) + '</span></div><div class="row" style="gap:6px"><button class="btn sm side-btn" data-act="senha">Alterar senha</button><button class="btn sm side-btn" data-act="sair">Sair</button></div></div></aside><main class="main">' + body + '</main></div>' + overlays();
+    return '<div class="app"><aside class="side"><div class="brand"><div class="brand-mark"><img src="/marca/logo-tbw-branco.png" alt="TBW" width="99" height="36"><span class="health">HEALTH</span></div><small>' + (visaoCliente() ? 'Área do cliente' : 'Gestão financeira da clínica') + '</small></div>' + sideClinica() + '<nav class="nav" aria-label="Seções">' + nav + '</nav>' +
+      '<div class="side-foot">' + (visaoCliente() ? atualizacao() : '<div id="sync"></div>') + '<div class="who"><b>' + esc(ctx.perfil.nome || ctx.perfil.email) + '</b><span>' + esc(ctx.perfil.email) + ' · ' + esc(PAPEL[ctx.papel] || ctx.papel) + '</span></div><div class="row" style="gap:6px"><button class="btn sm side-btn" data-act="senha">Alterar senha</button><button class="btn sm side-btn" data-act="sair">Sair</button></div>' +
+      (ctx.papel !== 'cliente' && ctx.clinica ? '<button class="btn sm side-btn wide" data-act="comocliente">' + (S.ui.comoCliente ? 'Voltar à visão TBW' : 'Ver como o cliente vê') + '</button>' : '') + '</div></aside><main class="main">' +
+      (S.ui.comoCliente ? '<div class="preview-cli"><span><b>Visão do cliente.</b> É assim que o cliente vê a plataforma: só estas telas, sem editar.</span><button class="btn sm" data-act="comocliente">Voltar à visão TBW</button></div>' : '') + body + '</main></div>' + overlays();
   }
-  var PAPEL = { admin: 'Administrador TBW', editor: 'Edição', leitura: 'Consulta' };
+  var PAPEL = { admin: 'Administrador TBW', editor: 'Edição', leitura: 'Consulta', cliente: 'Cliente' };
+  function atualizacao() {
+    var ult = null, ultMes = null;
+    Object.keys(S.real).forEach(function (k) { var d = S.real[k]; if (!d || d.fonte === 'exemplo') return; if (!ultMes || k > ultMes) ultMes = k; if (d.importadoEm && (!ult || d.importadoEm > ult)) ult = d.importadoEm; });
+    if (!ultMes) return '<div class="side-upd">Dados em preparação pela TBW</div>';
+    return '<div class="side-upd">Realizado até ' + MESES_LONGOS[+ultMes.slice(5) - 1] + '/' + ultMes.slice(0, 4) + (ult ? '<br>Atualizado pela TBW em ' + new Date(ult).toLocaleDateString('pt-BR') : '') + '</div>';
+  }
+  function emPreparo() {
+    return top('Bem-vindo à TBW Health', esc(ctx.clinica ? ctx.clinica.nome : '')) + '<div class="view"><div class="card empty"><h2>Os dados da clínica estão sendo preparados</h2><p class="note">A TBW está carregando a precificação e os números da clínica. Assim que estiver pronto, o desempenho, a DRE e o fluxo de caixa aparecem aqui.</p></div></div>';
+  }
   function sideClinica() {
     if (!ctx.clinicas.length) return '';
     if (ctx.clinicas.length === 1) return '<div class="side-clin"><span>Clínica</span><b>' + esc(ctx.clinicas[0].nome) + '</b></div>';
@@ -256,9 +277,9 @@ export function iniciarApp(rootEl, ctx) {
     if (!temExemplo()) return '';
     var oe = Object.keys(S.orcs).filter(function (k) { return S.orcs[k].exemplo; }), re = Object.keys(S.real).some(function (k) { return S.real[k].fonte === 'exemplo'; });
     var o = [oe.length ? 'do orçamento ' + oe.join(', ') : '', re ? 'do realizado marcado como exemplo' : ''].filter(Boolean).join(' e ');
-    return '<div class="banner"><span><b>Cenário de exemplo.</b> Os números ' + o + ' são fictícios, para demonstrar a plataforma. A precificação é a da planilha real da clínica. Importe o ERP e ajuste o orçamento para substituir.</span><a class="btn sm" href="#erp">Ir para a integração</a></div>';
+    return '<div class="banner"><span><b>Cenário de exemplo.</b> Os números ' + o + ' são fictícios, para demonstrar a plataforma. A precificação é a da planilha real da clínica. ' + (visaoCliente() ? 'A TBW substitui pelos números reais da clínica.</span>' : 'Importe o ERP e ajuste o orçamento para substituir.</span><a class="btn sm" href="#erp">Ir para a integração</a>') + '</div>';
   }
-  function roBanner() { return S.canWrite ? '' : '<div class="banner"><span><b>Somente leitura.</b> Você pode consultar tudo, mas só editores salvam alterações.</span></div>'; }
+  function roBanner() { return S.canWrite || visaoCliente() ? '' : '<div class="banner"><span><b>Somente leitura.</b> Você pode consultar tudo, mas só editores salvam alterações.</span></div>'; }
 
   function viewHtml(v) {
     switch (v) {
@@ -415,6 +436,7 @@ export function iniciarApp(rootEl, ctx) {
   /* ================= Orçamento ================= */
   function vOrc() {
     var a = ano(), o = orcDoc(a), c = cfg();
+    if (!o && visaoCliente()) return top('Planejamento orçamentário ' + a, 'Nenhum orçamento para este ano', anoCtl()) + '<div class="view"><div class="card empty"><h2>Orçamento de ' + a + ' ainda não disponível</h2><p class="note">A TBW monta o orçamento com a clínica. Escolha outro ano no seletor acima.</p></div></div>';
     if (!o) {
       var prev = orcDoc(a - 1);
       return top('Planejamento orçamentário ' + a, 'Nenhum orçamento para este ano', anoCtl()) + '<div class="view">' + roBanner() + '<div class="card empty"><h2>Monte o orçamento de ' + a + '</h2>' +
@@ -460,7 +482,7 @@ export function iniciarApp(rootEl, ctx) {
       kpi('Caixa no fim do ano', R0(FC.sf), 'Geração operacional ' + R0(FC.fco), FC.sf < 0 ? 'bad' : '') +
       kpi('Ponto de equilíbrio', pe ? R0(pe) + '/mês' : '—', 'Receita mínima para cobrir os custos fixos') + '</div>';
     return top('Planejamento orçamentário ' + a, 'Receitas pelo volume de cada procedimento × preço da precificação; CMV, CSV, impostos e taxas saem da ficha técnica', anoCtl() + sel('o-status', stOpts, o.status || (o.exemplo ? 'exemplo' : 'elaboracao'), 'data-in="ostatus" aria-label="Situação do orçamento"' + dis()) + '<button class="btn" data-act="exp-orc">Exportar Excel</button>') +
-      '<div class="view">' + roBanner() + (o.exemplo ? '<div class="banner"><span><b>Orçamento de exemplo.</b> Volumes e despesas são ilustrativos. Ajuste os números e mude a situação para “Em elaboração” ou “Aprovado”.</span></div>' : '') + kp +
+      '<div class="view">' + roBanner() + (o.exemplo ? '<div class="banner"><span><b>Orçamento de exemplo.</b> Volumes e despesas são ilustrativos.' + (visaoCliente() ? ' A TBW substitui pelo orçamento real da clínica.' : ' Ajuste os números e mude a situação para “Em elaboração” ou “Aprovado”.') + '</span></div>' : '') + kp +
       '<div class="card"><header><div><h2>Premissas do orçamento</h2><p>O mix de pagamento define quanto da receita entra pelo preço de cartão (com impostos e taxa) e quando o dinheiro chega ao caixa.</p></div></header><div class="fields">' +
       '<label class="f">Vendas no cartão (%)<input class="inp n" id="o-mix" data-in="omix" value="' + esc(nf1.format(mix * 100)) + '"' + dis() + '></label>' +
       '<label class="f">Recebimento do cartão (meses)<input class="inp n" id="o-pz-cartao" data-in="opz" data-k="cartao" value="' + T.num(pz.cartao) + '"' + dis() + '></label>' +
@@ -502,7 +524,7 @@ export function iniciarApp(rootEl, ctx) {
     var sub = kind === 'dre' ? 'Regime de competência · orçado do planejamento, realizado do ERP' : 'Regime de caixa (método direto) · orçado do planejamento, realizado do ERP';
     var ctl = anoCtl() + (vw === 'cmp' ? perCtl() : '') + seg(viewK, [['cmp', 'Orçado × realizado'], ['mensal', 'Mês a mês']], vw) + '<button class="btn" data-act="exp-' + kind + '">Exportar Excel</button>';
     var html = top(nome + ' · ' + a, sub, ctl) + '<div class="view">' + bannerEx();
-    if (!d.o && !d.real.has.some(Boolean)) return html + '<div class="card empty"><h2>Sem orçamento e sem realizado para ' + a + '</h2><p class="note">Monte o orçamento no Planejamento ou importe o realizado na Integração ERP.</p><div class="row"><a class="btn pri" href="#orcamento">Abrir planejamento</a><a class="btn" href="#erp">Importar do ERP</a></div></div></div>';
+    if (!d.o && !d.real.has.some(Boolean)) return html + '<div class="card empty"><h2>Sem orçamento e sem realizado para ' + a + '</h2><p class="note">' + (visaoCliente() ? 'A TBW ainda não lançou o orçamento nem o realizado deste ano. Escolha outro ano no seletor acima.' : 'Monte o orçamento no Planejamento ou importe o realizado na Integração ERP.') + '</p>' + (visaoCliente() ? '' : '<div class="row"><a class="btn pri" href="#orcamento">Abrir planejamento</a><a class="btn" href="#erp">Importar do ERP</a></div>') + '</div></div>';
     if (vw === 'cmp') {
       var siO = siAte(kind, a, ix[0], 'orc'), siR = siAte(kind, a, ix[0], 'real');
       var FO = fecha(kind, T.somaMeses(d.orcS, ix), siO), FR = fecha(kind, T.somaMeses(d.real.v, ixR), siR);
@@ -515,7 +537,7 @@ export function iniciarApp(rootEl, ctx) {
         return out;
       }).join('');
       html += (faltam.length && S.ui.per !== 'mes' && ixR.length ? '<p class="note">Realizado disponível em ' + ixR.length + ' de ' + ix.length + ' meses do período (' + ixR.map(mesNome).join(', ') + '). O orçado considera todos os meses do período.</p>' : '') +
-        (!ixR.length ? '<div class="banner"><span>Não há realizado importado para ' + esc(perLabel()) + '. A coluna realizado fica vazia até a importação do ERP.</span><a class="btn sm" href="#erp">Importar</a></div>' : '') +
+        (!ixR.length ? '<div class="banner"><span>Não há realizado importado para ' + esc(perLabel()) + '. A coluna realizado fica vazia até ' + (visaoCliente() ? 'a TBW lançar o mês.</span>' : 'a importação do ERP.</span><a class="btn sm" href="#erp">Importar</a>') + '</div>' : '') +
         '<div class="tw"><table class="t dem"><thead><tr><th>' + esc(perLabel()) + '</th><th class="n">Orçado</th><th class="n">' + (kind === 'dre' ? '% RB' : '') + '</th><th class="n">Realizado</th><th class="n">' + (kind === 'dre' ? '% RB' : '') + '</th><th class="n">Variação R$</th><th class="n">Variação %</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
         '<p class="note">' + (kind === 'dre' ? 'Custos e deduções aparecem com sinal negativo. Variação verde é favorável ao resultado. Clique numa linha para ver as categorias do ERP que a compõem.' : 'Saídas aparecem com sinal negativo. Clique numa linha para ver as categorias do ERP que a compõem.') + '</p>';
     } else {
@@ -1187,7 +1209,7 @@ export function iniciarApp(rootEl, ctx) {
 
   /* ================= Administração TBW ================= */
   var ACT_ADM = {}, IN_ADM = {};
-  S.adm = { ok: false, carregando: false, erro: null, clinicas: [], perfis: [], membros: [], novo: { tipo: 'clinica', papel: 'editor', clinica: '', senha: '' } };
+  S.adm = { ok: false, carregando: false, erro: null, clinicas: [], perfis: [], membros: [], novo: { tipo: 'clinica', papel: 'cliente', clinica: '', senha: '' } };
   function admCarregar() {
     if (S.adm.carregando) return;
     S.adm.carregando = true;
@@ -1223,7 +1245,7 @@ export function iniciarApp(rootEl, ctx) {
     var userRows = A.perfis.map(function (p) {
       var ms = A.membros.filter(function (m) { return m.user_id === p.user_id; });
       var acesso = p.tbw_admin ? '<span class="chip info">Administrador TBW · todas as clínicas</span>' : (ms.length ? ms.map(function (m) {
-        return '<span class="chip ' + (m.papel === 'editor' ? 'cmv' : 'csv') + '">' + esc(nomeClin[m.clinica_id] || 'Clínica') + ' · ' + (m.papel === 'editor' ? 'Edição' : 'Consulta') + ' <button class="x" data-act="admdesvinc" data-u="' + p.user_id + '" data-c="' + m.clinica_id + '" aria-label="Remover acesso">✕</button></span>';
+        return '<span class="chip ' + (m.papel === 'editor' ? 'cmv' : m.papel === 'cliente' ? 'info' : 'csv') + '">' + esc(nomeClin[m.clinica_id] || 'Clínica') + ' · ' + (PAPEL[m.papel] || m.papel) + ' <button class="x" data-act="admdesvinc" data-u="' + p.user_id + '" data-c="' + m.clinica_id + '" aria-label="Remover acesso">✕</button></span>';
       }).join(' ') : '<span class="muted">Sem clínica</span>');
       var eu = p.user_id === ctx.uid;
       return '<tr><td><b>' + esc(p.nome || '—') + '</b>' + (eu ? ' <span class="chip">você</span>' : '') + (p.trocar_senha ? ' <span class="chip warn">senha provisória</span>' : '') + '<br><span class="muted">' + esc(p.email) + '</span></td>' +
@@ -1243,13 +1265,14 @@ export function iniciarApp(rootEl, ctx) {
       '<label class="f">Senha provisória<input class="inp" id="nu-senha" value="' + esc(N.senha) + '" data-in="admnovo" data-k="senha"></label>' +
       '<label class="f">Tipo de acesso' + sel('nu-tipo', [['clinica', 'Usuário de clínica'], ['admin', 'Administrador TBW']], N.tipo, 'data-in="admnovo" data-k="tipo"') + '</label>' +
       (N.tipo === 'clinica' ? '<label class="f">Clínica' + sel('nu-clin', clinOpts.length ? clinOpts : [['', 'Crie uma clínica antes']], N.clinica, 'data-in="admnovo" data-k="clinica"') + '</label>' +
-        '<label class="f">Permissão' + sel('nu-papel', [['editor', 'Edição'], ['leitura', 'Consulta']], N.papel, 'data-in="admnovo" data-k="papel"') + '</label>' : '') +
+        '<label class="f">Permissão' + sel('nu-papel', PAPEIS, N.papel, 'data-in="admnovo" data-k="papel"') + '</label>' : '') +
       '</div><div class="row" style="margin-top:12px"><button class="btn pri" data-act="admcriaruser">Criar usuário</button><button class="btn ghost" data-act="admgerar">Gerar outra senha</button><span class="note">Administrador TBW vê e edita todas as clínicas e gerencia usuários.</span></div></div>' +
-      '<div class="card"><header><div><h2>Usuários</h2><p>Edição altera preços, orçamento e importa o ERP. Consulta só visualiza.</p></div></header>' +
+      '<div class="card"><header><div><h2>Usuários</h2><p>Cliente vê Desempenho, DRE, Fluxo de caixa, Planejamento e Precificação, sem editar e sem as telas internas da TBW. Edição altera preços, orçamento e importa os dados. Consulta vê tudo sem editar.</p></div></header>' +
       '<div class="tw"><table class="t"><thead><tr><th>Usuário</th><th>Acesso</th><th>Situação</th><th></th></tr></thead><tbody>' + (userRows || '<tr><td colspan="4" class="muted">Nenhum usuário.</td></tr>') + '</tbody></table></div>' +
-      (userOpts.length && clinOpts.length ? '<div class="row" style="margin-top:12px"><span class="note">Dar acesso a outra clínica:</span>' + sel('vinc-u', userOpts, '', 'aria-label="Usuário"') + sel('vinc-c', clinOpts, '', 'aria-label="Clínica"') + sel('vinc-p', [['editor', 'Edição'], ['leitura', 'Consulta']], 'editor', 'aria-label="Permissão"') + '<button class="btn" data-act="admvinc">Vincular</button></div>' : '') +
+      (userOpts.length && clinOpts.length ? '<div class="row" style="margin-top:12px"><span class="note">Dar acesso a outra clínica:</span>' + sel('vinc-u', userOpts, '', 'aria-label="Usuário"') + sel('vinc-c', clinOpts, '', 'aria-label="Clínica"') + sel('vinc-p', PAPEIS, 'cliente', 'aria-label="Permissão"') + '<button class="btn" data-act="admvinc">Vincular</button></div>' : '') +
       '</div></div>';
   }
+  var PAPEIS = [['cliente', 'Cliente'], ['editor', 'Edição (equipe)'], ['leitura', 'Consulta (equipe)']];
   function admExec(p, okMsg) {
     return Promise.resolve(p).then(function (r) {
       if (r && r.error) throw r.error;
@@ -1416,6 +1439,12 @@ export function iniciarApp(rootEl, ctx) {
     mno: function () { S.ui.modal = null; render(); },
     myes: function () { var f = S.ui.modal && S.ui.modal.fn, inp = document.getElementById('modal-in'), v = inp ? inp.value : null; S.ui.modal = null; render(); if (f) f(v); },
     senha: function () { ctx.trocarSenha(); },
+    comocliente: function () {
+      S.ui.comoCliente = !S.ui.comoCliente;
+      S.canWrite = S.ui.comoCliente ? false : !!ctx.canWrite;
+      route(); if (('#' + S.ui.view) !== location.hash) location.hash = '#' + S.ui.view;
+      render(); window.scrollTo(0, 0);
+    },
     sair: function () { ctx.sair(); }
   };
 

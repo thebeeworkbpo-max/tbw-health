@@ -42,7 +42,7 @@ export default async function handler(req, res) {
 
     if (b.acao === 'criar') {
       const email = String(b.email || '').trim().toLowerCase(), nome = String(b.nome || '').trim(), senha = String(b.senha || '');
-      const tbw_admin = !!b.tbw_admin, papel = b.papel === 'leitura' ? 'leitura' : 'editor', clinica_id = b.clinica_id || null;
+      const tbw_admin = !!b.tbw_admin, papel = ['leitura', 'cliente'].includes(b.papel) ? b.papel : 'editor', clinica_id = b.clinica_id || null;
       if (!EMAIL.test(email) || !nome || senha.length < 8) return res.status(400).json({ erro: 'Informe nome, e-mail válido e senha com 8 caracteres ou mais.' });
       if (!tbw_admin && !clinica_id) return res.status(400).json({ erro: 'Escolha a clínica do usuário.' });
       let userId;
