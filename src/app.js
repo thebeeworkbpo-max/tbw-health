@@ -1,6 +1,7 @@
 import TBW from './engine.js';
 import { lerPlanilha } from './planilha.js';
 import * as CX from './conexoes.js';
+import * as SIM from './simulador.js';
 
 export function iniciarApp(rootEl, ctx) {
   'use strict';
@@ -37,17 +38,17 @@ export function iniciarApp(rootEl, ctx) {
   /* ================= Estado ================= */
   var S = {
     db: null, user: null, dl: null, uid: null, canWrite: true, ready: false, noDb: false, slow: false,
-    cfg: null, insumos: null, procs: null, orcs: {}, real: {}, depara: {}, erpcfg: {}, banco: {}, cartao: {}, ofin: null,
+    cfg: null, insumos: null, procs: null, orcs: {}, real: {}, depara: {}, erpcfg: {}, banco: {}, cartao: {}, ofin: null, simDoc: null,
     got: {}, ver: 0, saving: 0, lastSave: null,
     ui: {
       view: 'visao', ano: null, mes: null, per: 'ytd',
       prec: { q: '', g: '', st: '', forma: 'pix', sort: 'o', dir: 1 },
       ins: { q: '', cat: '' }, sel: null, meta: null,
       dreView: 'cmp', dreBase: 'real', dfcView: 'cmp', dfcBase: 'real', open: {},
-      imp: null, impB: null, impC: null, conc: { mes: null, q: '', conta: '' }, of: { cfg: null, busy: false }, orcCresc: 5, modal: null, toast: null, pend: false
+      imp: null, impB: null, impC: null, conc: { mes: null, q: '', conta: '' }, of: { cfg: null, busy: false }, sim: { local: {}, proc: null, dur: 60 }, orcCresc: 5, modal: null, toast: null, pend: false
     }
   };
-  var REQ = ['config/geral', 'base/insumos', 'base/procedimentos', 'orcamento', 'realizado', 'erp/depara', 'erp/config', 'banco', 'cartao', 'conexoes/openfinance'];
+  var REQ = ['config/geral', 'base/insumos', 'base/procedimentos', 'orcamento', 'realizado', 'erp/depara', 'erp/config', 'banco', 'cartao', 'conexoes/openfinance', 'simulador/config'];
   var COLS = { orcamento: 'orcs', realizado: 'real', banco: 'banco', cartao: 'cartao' };
 
   function cfg() { var c = S.cfg || {}; return { t: c.t != null ? +c.t : 0.14, c: c.c != null ? +c.c : 0.06, modo: c.modo || 'planilha', fc: c.fc > 0 ? +c.fc : null, meta: c.meta != null ? +c.meta : 0.35, clinica: c.clinica || (ctx.clinica ? ctx.clinica.nome : 'TBW Health'), ano: c.ano, origem: c.origem }; }
@@ -153,6 +154,7 @@ export function iniciarApp(rootEl, ctx) {
     subCol('banco', function (docs) { S.banco = docs; });
     subCol('cartao', function (docs) { S.cartao = docs; });
     subDoc('conexoes/openfinance', function (d) { S.ofin = d; });
+    subDoc('simulador/config', function (d) { if (!W.timers['simulador/config']) S.simDoc = d; });
   }
   function subDoc(path, apply) {
     S.db.doc(path).onSnapshot(function (snap) {
@@ -184,6 +186,7 @@ export function iniciarApp(rootEl, ctx) {
     { id: 'dre', n: 'DRE', ic: '<path d="M4 6h16M4 12h10M4 18h13"/>' },
     { id: 'dfc', n: 'Fluxo de caixa', ic: '<path d="M3 15c3-6 6 6 9 0s6-6 9 0"/><path d="M3 9h4M17 9h4"/>' },
     { id: 'orcamento', n: 'Planejamento', ic: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
+    { id: 'sim', n: 'Simulador', ic: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h2M12 18h4"/>' },
     { id: 'precificacao', n: 'Precificação', sec: 'Custos', ic: '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/>' },
     { id: 'insumos', n: 'Insumos CMV · CSV', ic: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>' },
     { id: 'erp', n: 'Conexões', sec: 'Dados', ic: '<path d="M8 7V3M16 7V3M6 7h12v4a6 6 0 0 1-12 0V7zM12 17v4"/>' },
@@ -192,7 +195,7 @@ export function iniciarApp(rootEl, ctx) {
     { id: 'admin', n: 'Administração', sec: 'TBW', ic: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>' }
   ];
   /* Visão do cliente: o dono da clínica vê resultados e preços, sem as telas internas da TBW (conexões, conciliação, premissas, insumos, administração). */
-  var CLIENTE_VIEWS = ['visao', 'dre', 'dfc', 'orcamento', 'precificacao'];
+  var CLIENTE_VIEWS = ['visao', 'dre', 'dfc', 'orcamento', 'sim', 'precificacao'];
   function visaoCliente() { return ctx.papel === 'cliente' || !!S.ui.comoCliente; }
   function podeVer(id) { if (id === 'admin') return !!ctx.isAdmin && !visaoCliente(); return !visaoCliente() || CLIENTE_VIEWS.indexOf(id) >= 0; }
   function route() {
@@ -290,6 +293,7 @@ export function iniciarApp(rootEl, ctx) {
       case 'dfc': return vDem('dfc');
       case 'erp': return vErp();
       case 'conc': return vConc();
+      case 'sim': return vSim();
       case 'premissas': return vPrem();
       default: return vVisao();
     }
@@ -1132,6 +1136,90 @@ export function iniciarApp(rootEl, ctx) {
     return html + '</div>';
   }
 
+  /* ================= Simulador: custo-hora, hora de poltrona e reserva ================= */
+  function simCfg() { var c = SIM.config(S.simDoc, S.ui.sim.local); if (c.meta == null || !isFinite(c.meta)) c.meta = cfg().meta; return c; }
+  function simSet(mut) {
+    if (S.canWrite) { var d = Object.assign({}, S.simDoc || {}); d.fixo = Object.assign({}, d.fixo || {}); d.valor = Object.assign({}, d.valor || {}); d.caixa = Object.assign({}, d.caixa || {}); mut(d); S.simDoc = d; save('simulador/config', function () { return S.simDoc; }, 400); }
+    else { var l = S.ui.sim.local; l.fixo = l.fixo || {}; l.valor = l.valor || {}; l.caixa = l.caixa || {}; mut(l); }
+    later(true);
+  }
+  function mesCurto(k) { return T.MESES[+k.slice(5) - 1].toLowerCase() + '/' + k.slice(2, 4); }
+  function vSim() {
+    var c = simCfg(), r = SIM.calcula(S.real, c);
+    var html = top('Simulador de custo-hora e reserva', r ? 'Base: média de ' + mesCurto(r.meses[0]) + ' a ' + mesCurto(r.meses[r.n - 1]) + ' (' + r.n + (r.n === 1 ? ' mês' : ' meses') + ' do realizado)' : 'Sem realizado para calcular', '') + '<div class="view">';
+    if (!r) return html + '<div class="card empty"><h2>O simulador usa a média do realizado</h2><p class="note">' + (visaoCliente() ? 'A TBW ainda não lançou os meses realizados da clínica.' : 'Importe os meses realizados em Conexões para calcular o custo da hora e a reserva.') + '</p>' + (visaoCliente() ? '' : '<a class="btn pri" href="#erp">Abrir conexões</a>') + '</div></div>';
+    var P = r.poltrona, Rv = r.reserva, NUM = function (k, rot, val, suf, ph) { return '<label class="f">' + rot + '<input class="inp n" id="sim-' + k + '" data-in="simv" data-k="' + k + '" value="' + esc(val) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>' + (suf ? '<small class="muted">' + suf + '</small>' : '') + '</label>'; };
+    var pc = function (x) { return x == null ? '' : nf1.format(x * 100); };
+    html += (S.canWrite ? '' : '<div class="banner info"><span>Altere as premissas à vontade: a simulação vale só nesta tela e não muda os números da clínica.</span></div>') +
+      '<div class="card"><header><div><h2>Premissas da simulação</h2><p>Horas de funcionamento, poltronas e cenário de caixa</p></div>' + sel('sim-meses', [[12, 'Média de 12 meses'], [6, 'Média de 6 meses'], [3, 'Média de 3 meses']], c.meses, 'data-in="simmeses" aria-label="Base"') + '</header><div class="fields">' +
+      NUM('dias', 'Dias de atendimento por mês', inNum(c.dias)) + NUM('horas', 'Horas abertas por dia', inNum(c.horas)) +
+      NUM('poltronas', 'Poltronas de soro', inNum(c.poltronas)) + NUM('horasPoltrona', 'Horas de poltrona por dia', inNum(c.horasPoltrona)) +
+      NUM('ocupacao', 'Ocupação das poltronas (%)', pc(c.ocupacao)) + NUM('parcela', 'Custos fixos cobertos pelas poltronas (%)', c.parcela != null ? pc(c.parcela) : '', c.parcela != null ? '' : 'automático: peso da soroterapia e injetáveis na receita', pc(P.parcelaAuto)) +
+      NUM('meta', 'Meta de margem (%)', pc(c.meta)) + NUM('mesesReserva', 'Meses de reserva', inNum(c.mesesReserva)) + NUM('queda', 'Queda de receita no cenário (%)', pc(c.queda)) +
+      '</div></div>';
+    html += '<div class="kpis k4">' +
+      kpi('Custo fixo por hora aberta', R2(r.custoHora), R0(r.F) + '/mês ÷ ' + f0(r.H) + ' h') +
+      kpi('Receita mínima por hora', R2(r.eqHora), 'equilíbrio · custos variáveis de ' + pct(r.v) + ' da receita') +
+      kpi('Custo fixo da hora de poltrona', P.custoHora != null ? R2(P.custoHora) : '—', f0(c.poltronas) + ' poltronas · ' + pct(c.ocupacao) + ' de ocupação') +
+      kpi('Reserva para o mês seguinte', R0(Rv.recomendada), 'maior mês da base: ' + R0(Rv.recomendadaPior), Rv.quedaFalta > 0 ? 'bad' : '') + '</div>';
+    // custo da hora
+    var row = function (a, b, cls) { return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + a + '</td><td class="n">' + b + '</td></tr>'; };
+    html += '<div class="grid g2"><div class="card"><header><div><h2>Custo da hora da clínica</h2><p>Quanto cada hora aberta precisa faturar</p></div></header><div class="tw"><table class="t"><tbody>' +
+      row('Custos fixos por mês', R0(r.F)) + row('Horas abertas por mês', f0(r.H) + ' h <small class="muted">(' + f0(c.dias) + ' dias × ' + f0(c.horas) + ' h)</small>') +
+      row('<b>Custo fixo por hora</b>', '<b>' + R2(r.custoHora) + '</b>') + row('Custos variáveis (impostos, materiais e itens marcados como variáveis)', pct(r.v) + ' da receita') +
+      row('Receita mínima por mês (ponto de equilíbrio)', R0(r.eqMes)) + row('<b>Receita mínima por hora</b>', '<b>' + R2(r.eqHora) + '</b>') +
+      row('Receita por hora para margem de ' + pct(c.meta), r.metaHora != null ? R2(r.metaHora) : '—') +
+      row('Receita média realizada por hora', R2(r.recHora) + (r.folga != null ? ' <small class="' + (r.folga >= 0 ? 'pos' : 'neg') + '">' + (r.folga >= 0 ? '+' : '') + pct(r.folga) + ' sobre o equilíbrio</small>' : '')) +
+      '</tbody></table></div></div>';
+    // poltronas
+    var procs = (S.procs || []).filter(function (p) { return p.pr > 0; }).slice().sort(function (a, b) { return (a.g === 'sor' ? 0 : 1) - (b.g === 'sor' ? 0 : 1) || a.n.localeCompare(b.n); });
+    var sp = S.ui.sim, p = procs.filter(function (x) { return x.id === sp.proc; })[0] || procs[0], teste = '';
+    if (p && P.custoHora != null) {
+      var im = T.insMapOf(S.insumos || []), u = T.unit(p, cfg(), im), abs = P.custoHora * (+sp.dur || 0) / 60, pm = SIM.precoComFixo(u, abs);
+      var cad = (p.r || []).filter(function (it) { var i = im[it[0]]; return i && i.cat === 'cad'; }).reduce(function (s, it) { return s + im[it[0]].c * it[1]; }, 0);
+      teste = '<h3 style="margin-top:14px">Teste um procedimento</h3><div class="fields">' +
+        '<label class="f" style="grid-column:span 2">Procedimento' + sel('sim-proc', procs.map(function (x) { return [x.id, x.n]; }), p.id, 'data-in="simproc"') + '</label>' +
+        '<label class="f">Tempo na poltrona (min)<input class="inp n" id="sim-dur" data-in="simdur" value="' + esc(inNum(+sp.dur || 0)) + '"></label></div>' +
+        '<div class="tw"><table class="t"><thead><tr><th></th><th class="n">PIX</th><th class="n">Cartão</th></tr></thead><tbody>' +
+        '<tr><td>Preço praticado</td><td class="n">' + R2(u.E) + '</td><td class="n">' + R2(u.I) + '</td></tr>' +
+        '<tr><td>Margem de contribuição (precificação)</td><td class="n">' + R2(u.pix.mg) + '</td><td class="n">' + R2(u.car.mg) + '</td></tr>' +
+        '<tr><td>(−) Custo fixo da poltrona no atendimento</td><td class="n neg">' + R2(-abs) + '</td><td class="n neg">' + R2(-abs) + '</td></tr>' +
+        '<tr class="tot"><td>Resultado por atendimento</td><td class="n ' + (pm.pix.resultado < 0 ? 'neg' : 'pos') + '">' + R2(pm.pix.resultado) + '</td><td class="n ' + (pm.car.resultado < 0 ? 'neg' : 'pos') + '">' + R2(pm.car.resultado) + '</td></tr>' +
+        '<tr><td>Preço mínimo nesta forma de pagamento (paga insumos, impostos, honorário e poltrona)</td><td class="n">' + R2(pm.pix.minimo) + '</td><td class="n">' + R2(pm.car.minimo) + '</td></tr></tbody></table></div>' +
+        (cad ? '<p class="note">A ficha técnica deste procedimento já cobra ' + R2(cad) + ' de "tempo de cadeira"; o custo fixo calculado para ' + f0(+sp.dur || 0) + ' minutos é ' + R2(abs) + '. Ele está contado nas duas linhas: use um ou outro.</p>' : '');
+    }
+    html += '<div class="card"><header><div><h2>Hora de poltrona</h2><p>Faz sentido cobrar pela poltrona? Quanto custa cada hora ocupada</p></div></header><div class="tw"><table class="t"><tbody>' +
+      row('Custos fixos atribuídos às poltronas', R0(P.fixoAlocado) + ' <small class="muted">(' + pct(P.parcela) + ')</small>') +
+      row('Horas de poltrona disponíveis por mês', f0(P.hpCap) + ' h <small class="muted">(' + f0(c.poltronas) + ' × ' + f0(c.dias) + ' dias × ' + f0(c.horasPoltrona) + ' h)</small>') +
+      row('Horas ocupadas (' + pct(c.ocupacao) + ')', f0(P.hp) + ' h') +
+      row('<b>Custo fixo por hora de poltrona ocupada</b>', '<b>' + (P.custoHora != null ? R2(P.custoHora) : '—') + '</b>') +
+      row('Receita mínima por hora de poltrona', P.eqHora != null ? R2(P.eqHora) : '—') +
+      '</tbody></table></div>' + teste + '</div></div>';
+    // reserva
+    var cx = r.caixa.map(function (x) { return '<label class="chk"><input type="checkbox" data-in="simcx" data-k="' + x.id + '"' + (x.usa ? ' checked' : '') + '> ' + esc(x.n) + ' <small class="muted">' + R0(x.media) + '/mês</small></label>'; }).join('');
+    html += '<div class="card"><header><div><h2>Reserva de caixa para o mês seguinte</h2><p>Quanto deixar em conta para pagar o mês mesmo se a receita cair</p></div></header><div class="grid g2"><div class="tw"><table class="t"><tbody>' +
+      row('Custos fixos do mês', R0(r.F)) + row('Outras saídas fixas de caixa marcadas ao lado', R0(Rv.extra)) +
+      row('<b>Saídas fixas do mês</b>', '<b>' + R0(Rv.saidasFixas) + '</b>') +
+      row('Se o mês não tiver receita', R0(Rv.semReceita)) +
+      row('Se a receita cair ' + pct(Rv.queda) + ' (para ' + R0(Rv.quedaReceita) + ')', Rv.quedaFalta > 0 ? '<span class="neg">faltam ' + R0(Rv.quedaFalta) + '</span>' : '<span class="pos">a receita cobre</span>') +
+      row('Se a receita ficar na média (' + R0(r.R) + ')', Rv.mediaFalta > 0 ? '<span class="neg">faltam ' + R0(Rv.mediaFalta) + '</span>' : '<span class="pos">a receita cobre</span>') +
+      row('Maior mês de saídas fixas da base (' + mesCurto(Rv.pior.k) + ')', R0(Rv.pior.saidasFixas)) +
+      row('<b>Reserva recomendada (' + f0(c.mesesReserva) + (+c.mesesReserva === 1 ? ' mês' : ' meses') + ')</b>', '<b>' + R0(Rv.recomendada) + '</b> <small class="muted">ou ' + R0(Rv.recomendadaPior) + ' pelo maior mês</small>') +
+      '</tbody></table></div><div class="stack"><h3>Saídas de caixa que entram na reserva</h3>' + cx + '<p class="note">Retiradas de sócios ficam de fora por padrão: são decisão do mês, não compromisso. A receita do mês seguinte entra pelo cenário de queda.</p></div></div></div>';
+    // linhas de custo
+    var linhas = r.linhas.map(function (l) {
+      return '<tr><td><label class="chk"><input type="checkbox" data-in="simfixo" data-k="' + l.id + '"' + (l.fixo ? ' checked' : '') + '> ' + esc(l.n) + '</label>' + (l.cats.length ? '<br><small class="muted">' + l.cats.slice(0, 3).map(function (x) { return esc(x[0]) + ' ' + R0(x[1]); }).join(' · ') + '</small>' : '') + '</td>' +
+        '<td class="n">' + R0(l.media) + '</td><td class="n">' + R0(l.ultimo) + '</td><td class="n">' + (l.fixo ? '<input class="inp n" style="width:120px" data-in="simval" data-k="' + l.id + '" placeholder="' + esc(inNum(l.media)) + '" value="' + esc(l.ajustado ? inNum(l.valor) : '') + '">' : '<span class="muted">' + pct(r.R ? l.media / r.R : 0) + ' da receita</span>') + '</td></tr>';
+    }).join('');
+    html += '<div class="card"><header><div><h2>Custos considerados</h2><p>Marque o que é fixo. Para um custo que mudou (contrato encerrado, reajuste), digite o valor do mês seguinte.</p></div></header><div class="tw"><table class="t"><thead><tr><th>Linha da DRE · fixo</th><th class="n">Média da base</th><th class="n">Último mês</th><th class="n">Valor considerado</th></tr></thead><tbody>' + linhas +
+      '<tr class="tot"><td>Custos fixos</td><td class="n" colspan="3">' + R0(r.F) + '/mês</td></tr><tr class="tot"><td>Custos variáveis</td><td class="n" colspan="3">' + R0(r.V) + '/mês · ' + pct(r.v) + ' da receita</td></tr></tbody></table></div></div>';
+    // base mês a mês
+    html += '<div class="card"><header><div><h2>Base mês a mês</h2><p>Receita, custos e saídas fixas de cada mês da média</p></div></header><div class="tw"><table class="t"><thead><tr><th>Mês</th><th class="n">Receita</th><th class="n">Custos variáveis</th><th class="n">Custos fixos</th><th class="n">Resultado</th><th class="n">Saídas fixas de caixa</th></tr></thead><tbody>' +
+      r.porMes.map(function (m) { return '<tr><td>' + mesCurto(m.k) + '</td><td class="n">' + f0(m.rb) + '</td><td class="n neg">' + f0(-m.variaveis) + '</td><td class="n neg">' + f0(-m.fixos) + '</td><td class="n ' + (m.resultado < 0 ? 'neg' : '') + '">' + f0(m.resultado) + '</td><td class="n">' + f0(m.saidasFixas) + '</td></tr>'; }).join('') +
+      '</tbody></table></div><p class="note">O custo-hora varia com o tipo de procedimento; a média dos meses dilui essa diferença. Para um procedimento específico, use o teste da hora de poltrona.</p></div>';
+    return html + '</div>';
+  }
+
   /* ================= Premissas e base ================= */
   function vPrem() {
     var c = cfg();
@@ -1490,6 +1578,16 @@ export function iniciarApp(rootEl, ctx) {
     cmesv: function (t) { S.ui.conc.mes = +t.value; render(); },
     ccontav: function (t) { S.ui.conc.conta = t.value; render(); },
     cq: function (t) { S.ui.conc.q = t.value; render(); },
+    simv: function (t) {
+      var k = t.dataset.k, raw = String(t.value || '').trim(), v = parseBR(raw), PCT = { ocupacao: 1, parcela: 1, meta: 1, queda: 1 };
+      simSet(function (d) { if (k === 'parcela' && !raw) d.parcela = null; else d[k] = PCT[k] ? Math.min(1, Math.max(0, v / 100)) : Math.max(0, v); });
+    },
+    simmeses: function (t) { simSet(function (d) { d.meses = +t.value; }); },
+    simfixo: function (t) { simSet(function (d) { d.fixo[t.dataset.k] = t.checked; }); },
+    simval: function (t) { var raw = String(t.value || '').trim(); simSet(function (d) { if (!raw) delete d.valor[t.dataset.k]; else d.valor[t.dataset.k] = Math.max(0, parseBR(raw)); }); },
+    simcx: function (t) { simSet(function (d) { d.caixa[t.dataset.k] = t.checked; }); },
+    simproc: function (t) { S.ui.sim.proc = t.value; render(); },
+    simdur: function (t) { S.ui.sim.dur = Math.max(0, parseBR(t.value)); render(); },
     isheet: function (t) { S.ui.imp.sheet = +t.value; S.ui.imp.dest = {}; S.ui.imp.sel = {}; prepSheet(); impCalc(); render(); },
     icol: function (t) { var I = S.ui.imp; I.cols[t.dataset.k] = t.value === '' ? null : +t.value; I.sel = {}; impCalc(); render(); },
     idest: function (t) { var I = S.ui.imp; I.dest[t.dataset.cat] = t.value; impCalc(); render(); },
